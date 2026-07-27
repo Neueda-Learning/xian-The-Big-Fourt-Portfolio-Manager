@@ -1,8 +1,7 @@
-package org.example.xianthebigfourtportfoliomanager.dao;
+package org.example.xianthebigfourtportfoliomanager.repository;
 
 import org.example.xianthebigfourtportfoliomanager.entity.AssetType;
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -11,42 +10,20 @@ import java.sql.Timestamp;
 import java.util.List;
 
 @Repository
-public class HoldingDaoImpl implements HoldingDao {
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
+public class HoldingRepository {
 
-    @Override
-    public List<Holding> findByPortfolioId(int portfolioId) {
-        String sql = "select * from holding where portfolio_id = ?";
-        return jdbcTemplate.query(sql, (rs, row) -> {
-            Date purchaseDate = rs.getDate("purchase_date");
-            Timestamp createdAt = rs.getTimestamp("create_at");
-            Timestamp updatedAt = rs.getTimestamp("updated_at");
+    private final JdbcTemplate jdbcTemplate;
 
-            return new Holding(
-                    rs.getInt("id"),
-                    rs.getInt("portfolio_id"),
-                    AssetType.valueOf(rs.getString("asset_type")),
-                    rs.getString("ticker"),
-                    rs.getBigDecimal("quantity"),
-                    rs.getBigDecimal("purchase_price"),
-                    purchaseDate == null ? null : purchaseDate.toLocalDate(),
-                    rs.getString("currency"),
-                    createdAt == null ? null : createdAt.toLocalDateTime(),
-                    updatedAt == null ? null : updatedAt.toLocalDateTime()
-            );
-        }, portfolioId);
-
+    public HoldingRepository(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Override
-    public Holding findById(int id) {
+    public Holding getHoldingById(int id) {
         String sql = "select * from holding where id = ?";
-        List<Holding> list = jdbcTemplate.query(sql, (rs, row) -> {
+        List<Holding> list = jdbcTemplate.query(sql, (rs, rowNum) -> {
             Date purchaseDate = rs.getDate("purchase_date");
-            Timestamp createdAt = rs.getTimestamp("create_at");
-            Timestamp updatedAt = rs.getTimestamp("updated_at");
-
+            Timestamp createAt = rs.getTimestamp("create_at");
+            Timestamp updateAt = rs.getTimestamp("updated_at");
             return new Holding(
                     rs.getInt("id"),
                     rs.getInt("portfolio_id"),
@@ -56,19 +33,36 @@ public class HoldingDaoImpl implements HoldingDao {
                     rs.getBigDecimal("purchase_price"),
                     purchaseDate == null ? null : purchaseDate.toLocalDate(),
                     rs.getString("currency"),
-                    createdAt == null ? null : createdAt.toLocalDateTime(),
-                    updatedAt == null ? null : updatedAt.toLocalDateTime()
+                    createAt == null ? null : createAt.toLocalDateTime(),
+                    updateAt == null ? null : updateAt.toLocalDateTime()
             );
         }, id);
-
         return list.isEmpty() ? null : list.get(0);
-
     }
 
-    @Override
+    public List<Holding> getHoldingsByPortfolioId(int portfolioId) {
+        String sql = "select * from holding where portfolio_id = ?";
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Date purchaseDate = rs.getDate("purchase_date");
+            Timestamp createAt = rs.getTimestamp("create_at");
+            Timestamp updateAt = rs.getTimestamp("updated_at");
+            return new Holding(
+                    rs.getInt("id"),
+                    rs.getInt("portfolio_id"),
+                    AssetType.valueOf(rs.getString("asset_type")),
+                    rs.getString("ticker"),
+                    rs.getBigDecimal("quantity"),
+                    rs.getBigDecimal("purchase_price"),
+                    purchaseDate == null ? null : purchaseDate.toLocalDate(),
+                    rs.getString("currency"),
+                    createAt == null ? null : createAt.toLocalDateTime(),
+                    updateAt == null ? null : updateAt.toLocalDateTime()
+            );
+        }, portfolioId);
+    }
+
     public Holding save(Holding holding) {
-        String sql = "insert into holding (portfolio_id, asset_type, ticker, quantity, purchase_price, purchase_date, currency) " +
-                "values (?, ?, ?, ?, ?, ?, ?)";
+        String sql = "insert into holding (portfolio_id, asset_type, ticker, quantity, purchase_price, purchase_date, currency) values (?, ?, ?, ?, ?, ?, ?)";
         int rows = jdbcTemplate.update(
                 sql,
                 holding.getPortfolioId(),
@@ -79,24 +73,19 @@ public class HoldingDaoImpl implements HoldingDao {
                 holding.getPurchasedata(),
                 holding.getCurrency()
         );
-
         if (rows == 0) {
             return null;
         }
 
-        Integer generatedId = jdbcTemplate.queryForObject("select LAST_INSERT_ID()", Integer.class);
-        if (generatedId == null) {
+        Integer id = jdbcTemplate.queryForObject("select LAST_INSERT_ID()", Integer.class);
+        if (id == null) {
             return holding;
         }
-
-        holding.setId(generatedId);
-        return findById(generatedId);
+        return getHoldingById(id);
     }
 
-    @Override
     public Holding update(Holding holding) {
-        String sql = "update holding set portfolio_id = ?, asset_type = ?, ticker = ?, quantity = ?, " +
-                "purchase_price = ?, purchase_date = ?, currency = ?, updated_at = CURRENT_TIMESTAMP where id = ?";
+        String sql = "update holding set portfolio_id = ?, asset_type = ?, ticker = ?, quantity = ?, purchase_price = ?, purchase_date = ?, currency = ?, updated_at = CURRENT_TIMESTAMP where id = ?";
         jdbcTemplate.update(
                 sql,
                 holding.getPortfolioId(),
@@ -108,19 +97,18 @@ public class HoldingDaoImpl implements HoldingDao {
                 holding.getCurrency(),
                 holding.getId()
         );
-
-        return findById(holding.getId());
+        return getHoldingById(holding.getId());
     }
 
-    @Override
-    public void deletebyid(int id) {
-        jdbcTemplate.update("delete from holding where id = ?", id);
+    public int deleteById(int id) {
+        String sql = "delete from holding where id = ?";
+        return jdbcTemplate.update(sql, id);
     }
 
-    @Override
-    public boolean existbyid(int id) {
+    public boolean existsById(int id) {
         String sql = "select count(*) from holding where id = ?";
-        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, id);
-        return count != null && count > 0;
+        int count = jdbcTemplate.queryForObject(sql, Integer.class, id);
+        return  count > 0;
     }
 }
+
