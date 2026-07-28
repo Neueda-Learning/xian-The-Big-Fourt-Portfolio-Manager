@@ -20,6 +20,10 @@ public class TransactionService {
         return transactionRepository.getTransactionsByHoldingId(holdingId);
     }
 
+    public List<Transaction> getAllTransactions() {
+        return transactionRepository.getAllTransactions();
+    }
+
     public Transaction getTransactionById(int id) {
         return transactionRepository.getTransactionById(id);
     }

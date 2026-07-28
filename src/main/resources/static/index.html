@@ -3,74 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portfolio Manager</title>
+    <title>Portfolio Manager Dashboard</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header class="topbar">
     <h1>Big Fourt Portfolio Manager</h1>
-    <p>Simple full-stack dashboard for portfolios, holdings, transactions, and price history.</p>
+    <p>Automatic Yahoo-powered dashboard for assets, latest prices, trend analysis, holdings, and transaction history.</p>
 </header>
 
 <nav class="tabs" id="tabs">
-    <button class="tab active" data-tab="portfolio">Portfolio</button>
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="yahoo">Yahoo Prices</button>
+    <button class="tab" data-tab="trends">Asset Trends</button>
     <button class="tab" data-tab="holding">Holding</button>
     <button class="tab" data-tab="transaction">Transaction</button>
-    <button class="tab" data-tab="price">Price History</button>
 </nav>
 
 <main>
-    <section class="panel active" id="panel-portfolio">
-        <h2>Portfolio</h2>
-        <div class="grid-2">
-            <article class="card">
-                <h3>Create Portfolio</h3>
-                <form id="portfolio-create-form">
-                    <label>Name <input type="text" id="portfolio-name" required></label>
-                    <label>Description <input type="text" id="portfolio-description" required></label>
-                    <button type="submit">Save</button>
-                </form>
-            </article>
+    <section class="panel active" id="panel-dashboard">
+        <div class="card-header page-header">
+            <div>
+                <h2>Personal Asset Dashboard</h2>
+                <p class="muted">Total assets = cash + stock/bond profit or loss + money spent on buying stocks/bonds.</p>
+            </div>
+            <button id="dashboard-refresh">Refresh Dashboard</button>
+        </div>
 
-            <article class="card">
-                <h3>Find Portfolio By ID</h3>
-                <form id="portfolio-find-form">
-                    <label>ID <input type="number" id="portfolio-find-id" min="1" required></label>
-                    <button type="submit">Find</button>
-                </form>
-                <pre id="portfolio-find-result" class="result"></pre>
-            </article>
+        <div id="summary-cards" class="summary-grid"></div>
 
-            <article class="card">
-                <h3>Update Portfolio</h3>
-                <form id="portfolio-update-form">
-                    <label>ID <input type="number" id="portfolio-update-id" min="1" required></label>
-                    <label>Name <input type="text" id="portfolio-update-name" required></label>
-                    <label>Description <input type="text" id="portfolio-update-description" required></label>
-                    <button type="submit">Update</button>
-                </form>
-            </article>
+        <article class="card">
+            <h3>Asset Formula Breakdown</h3>
+            <div id="summary-breakdown"></div>
+        </article>
+    </section>
 
-            <article class="card">
-                <h3>Delete Portfolio</h3>
-                <form id="portfolio-delete-form">
-                    <label>ID <input type="number" id="portfolio-delete-id" min="1" required></label>
-                    <button type="submit" class="danger">Delete</button>
-                </form>
-            </article>
+    <section class="panel" id="panel-yahoo">
+        <div class="card-header page-header">
+            <div>
+                <h2>Latest Yahoo Data</h2>
+                <p class="muted">Yahoo data is displayed here directly. Only the latest price for each stock or bond ticker is shown.</p>
+            </div>
+            <button id="yahoo-refresh">Sync And Refresh Yahoo Prices</button>
+        </div>
+        <article class="card">
+            <h3>Yahoo Sync Status</h3>
+            <div id="yahoo-status"></div>
+        </article>
+        <article class="card">
+            <div id="latest-prices-table" class="table-wrap"></div>
+        </article>
+    </section>
+
+    <section class="panel" id="panel-trends">
+        <div class="card-header page-header">
+            <div>
+                <h2>Cash / Stock / Bond Changes</h2>
+                <p class="muted">Trend lines are built from stored price history and current holdings.</p>
+            </div>
+            <button id="trend-refresh">Refresh Trends</button>
         </div>
 
         <article class="card">
-            <div class="card-header">
-                <h3>All Portfolios</h3>
-                <button id="portfolio-refresh">Refresh</button>
-            </div>
-            <div id="portfolio-list" class="table-wrap"></div>
+            <div id="trend-legend" class="chart-legend"></div>
+            <div id="trend-chart" class="chart-wrap"></div>
+        </article>
+
+        <article class="card">
+            <h3>Trend Data Table</h3>
+            <div id="trend-table" class="table-wrap"></div>
         </article>
     </section>
 
     <section class="panel" id="panel-holding">
-        <h2>Holding</h2>
+        <div class="card-header page-header">
+            <div>
+                <h2>Holding Management</h2>
+                <p class="muted">Holdings are the only records managed manually. Yahoo price history refreshes automatically for stock and bond tickers.</p>
+            </div>
+            <button id="holding-refresh">Refresh Holdings</button>
+        </div>
+
         <div class="grid-2">
             <article class="card">
                 <h3>Create Holding</h3>
@@ -83,12 +96,12 @@
                             <option value="CASH">CASH</option>
                         </select>
                     </label>
-                    <label>Ticker <input type="text" id="holding-ticker" required></label>
+                    <label>Ticker (optional for CASH) <input type="text" id="holding-ticker"></label>
                     <label>Quantity <input type="number" id="holding-quantity" step="0.0001" required></label>
                     <label>Purchase Price <input type="number" id="holding-purchase-price" step="0.0001" required></label>
                     <label>Purchase Date <input type="date" id="holding-purchase-date" required></label>
                     <label>Currency <input type="text" id="holding-currency" value="USD" required></label>
-                    <button type="submit">Save</button>
+                    <button type="submit">Save Holding</button>
                 </form>
             </article>
 
@@ -96,7 +109,7 @@
                 <h3>Find Holding By ID</h3>
                 <form id="holding-find-form">
                     <label>ID <input type="number" id="holding-find-id" min="1" required></label>
-                    <button type="submit">Find</button>
+                    <button type="submit">Find Holding</button>
                 </form>
                 <pre id="holding-find-result" class="result"></pre>
             </article>
@@ -105,7 +118,7 @@
                 <h3>List Holdings By Portfolio ID</h3>
                 <form id="holding-by-portfolio-form">
                     <label>Portfolio ID <input type="number" id="holding-list-portfolio-id" min="1" required></label>
-                    <button type="submit">Load</button>
+                    <button type="submit">Load Portfolio Holdings</button>
                 </form>
             </article>
 
@@ -113,7 +126,7 @@
                 <h3>Delete Holding</h3>
                 <form id="holding-delete-form">
                     <label>ID <input type="number" id="holding-delete-id" min="1" required></label>
-                    <button type="submit" class="danger">Delete</button>
+                    <button type="submit" class="danger">Delete Holding</button>
                 </form>
             </article>
         </div>
@@ -130,133 +143,32 @@
                         <option value="CASH">CASH</option>
                     </select>
                 </label>
-                <label>Ticker <input type="text" id="holding-update-ticker" required></label>
+                <label>Ticker (optional for CASH) <input type="text" id="holding-update-ticker"></label>
                 <label>Quantity <input type="number" id="holding-update-quantity" step="0.0001" required></label>
                 <label>Purchase Price <input type="number" id="holding-update-purchase-price" step="0.0001" required></label>
                 <label>Purchase Date <input type="date" id="holding-update-purchase-date" required></label>
                 <label>Currency <input type="text" id="holding-update-currency" required></label>
-                <button type="submit">Update</button>
+                <button type="submit">Update Holding</button>
             </form>
         </article>
 
         <article class="card">
-            <h3>Holding List</h3>
+            <h3>All Holdings</h3>
             <div id="holding-list" class="table-wrap"></div>
         </article>
     </section>
 
     <section class="panel" id="panel-transaction">
-        <h2>Transaction</h2>
-        <div class="grid-2">
-            <article class="card">
-                <h3>Create Transaction</h3>
-                <form id="transaction-create-form">
-                    <label>Holding ID <input type="number" id="transaction-holding-id" min="1" required></label>
-                    <label>Type <input type="text" id="transaction-type" placeholder="BUY/SELL" required></label>
-                    <label>Quantity <input type="number" id="transaction-quantity" step="0.0001" required></label>
-                    <label>Price (optional, auto from Yahoo latest) <input type="number" id="transaction-price" step="0.0001"></label>
-                    <label>Trade DateTime <input type="datetime-local" id="transaction-trade-date" required></label>
-                    <button type="submit">Save</button>
-                </form>
-            </article>
-
-            <article class="card">
-                <h3>Find Transaction By ID</h3>
-                <form id="transaction-find-form">
-                    <label>ID <input type="number" id="transaction-find-id" min="1" required></label>
-                    <button type="submit">Find</button>
-                </form>
-                <pre id="transaction-find-result" class="result"></pre>
-            </article>
-
-            <article class="card">
-                <h3>List Transactions By Holding ID</h3>
-                <form id="transaction-by-holding-form">
-                    <label>Holding ID <input type="number" id="transaction-list-holding-id" min="1" required></label>
-                    <button type="submit">Load</button>
-                </form>
-            </article>
-
-            <article class="card">
-                <h3>Delete Transaction</h3>
-                <form id="transaction-delete-form">
-                    <label>ID <input type="number" id="transaction-delete-id" min="1" required></label>
-                    <button type="submit" class="danger">Delete</button>
-                </form>
-            </article>
+        <div class="card-header page-header">
+            <div>
+                <h2>Transaction Records</h2>
+                <p class="muted">Transactions are displayed automatically from the database.</p>
+            </div>
+            <button id="transaction-refresh">Refresh Transactions</button>
         </div>
 
         <article class="card">
-            <h3>Update Transaction</h3>
-            <form id="transaction-update-form" class="grid-form">
-                <label>ID <input type="number" id="transaction-update-id" min="1" required></label>
-                <label>Holding ID <input type="number" id="transaction-update-holding-id" min="1" required></label>
-                <label>Type <input type="text" id="transaction-update-type" required></label>
-                <label>Quantity <input type="number" id="transaction-update-quantity" step="0.0001" required></label>
-                <label>Price (optional, auto from Yahoo latest) <input type="number" id="transaction-update-price" step="0.0001"></label>
-                <label>Trade DateTime <input type="datetime-local" id="transaction-update-trade-date" required></label>
-                <button type="submit">Update</button>
-            </form>
-        </article>
-
-        <article class="card">
-            <h3>Transaction List</h3>
             <div id="transaction-list" class="table-wrap"></div>
-        </article>
-    </section>
-
-    <section class="panel" id="panel-price">
-        <h2>Price History</h2>
-        <div class="grid-2">
-            <article class="card">
-                <h3>Yahoo</h3>
-                <button id="yahoo-sync-all-btn">Load All Yahoo Data</button>
-                <pre id="yahoo-sync-all-result" class="result"></pre>
-            </article>
-
-            <article class="card">
-                <h3>Create Price Record</h3>
-                <form id="price-create-form">
-                    <label>Ticker <input type="text" id="price-ticker" required></label>
-                    <label>Price Date <input type="date" id="price-date" required></label>
-                    <label>Close Price <input type="number" id="price-close" step="0.0001" required></label>
-                    <button type="submit">Save</button>
-                </form>
-            </article>
-
-            <article class="card">
-                <h3>Find Price By Ticker + Date</h3>
-                <form id="price-find-form">
-                    <label>Ticker <input type="text" id="price-find-ticker" required></label>
-                    <label>Date <input type="date" id="price-find-date" required></label>
-                    <button type="submit">Find</button>
-                </form>
-                <pre id="price-find-result" class="result"></pre>
-            </article>
-
-            <article class="card">
-                <h3>List Prices By Date Range</h3>
-                <form id="price-range-form">
-                    <label>Ticker <input type="text" id="price-range-ticker" required></label>
-                    <label>Start Date <input type="date" id="price-range-start" required></label>
-                    <label>End Date <input type="date" id="price-range-end" required></label>
-                    <button type="submit">Load</button>
-                </form>
-            </article>
-
-            <article class="card">
-                <h3>Delete Price Record</h3>
-                <form id="price-delete-form">
-                    <label>Ticker <input type="text" id="price-delete-ticker" required></label>
-                    <label>Date <input type="date" id="price-delete-date" required></label>
-                    <button type="submit" class="danger">Delete</button>
-                </form>
-            </article>
-        </div>
-
-        <article class="card">
-            <h3>Price History List</h3>
-            <div id="price-list" class="table-wrap"></div>
         </article>
     </section>
 </main>

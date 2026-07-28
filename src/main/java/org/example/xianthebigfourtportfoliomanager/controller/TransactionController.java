@@ -34,6 +34,11 @@ public class TransactionController {
         return repository.getTransactionById(id);
     }
 
+    @GetMapping("/transactions")
+    public List<Transaction> getAllTransactions() {
+        return repository.getAllTransactions();
+    }
+
     @GetMapping("/transactions/holding/{holdingId}")
     public List<Transaction> getByHoldingId(@PathVariable int holdingId) {
         return repository.getTransactionsByHoldingId(holdingId);

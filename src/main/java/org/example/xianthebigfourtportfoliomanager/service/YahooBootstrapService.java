@@ -4,6 +4,7 @@ import org.example.xianthebigfourtportfoliomanager.entity.priceHistory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -29,6 +30,7 @@ public class YahooBootstrapService {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Transactional
     public void syncYahooDataOnStartup() {
         List<String> tickers = holdingService.getDistinctTickers();
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -55,6 +57,7 @@ public class YahooBootstrapService {
         this.bootstrapCompleted = true;
     }
 
+    @Transactional(readOnly = true)
     public Map<String, Object> getBootstrapStatus() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("completed", bootstrapCompleted);

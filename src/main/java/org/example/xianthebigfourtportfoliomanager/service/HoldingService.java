@@ -24,10 +24,16 @@ public class HoldingService {
         return holdingRepository.getHoldingById(holdingId);
     }
 
+    @Transactional(readOnly = true)
+    public List<Holding> getAllHoldings() {
+        return holdingRepository.getAllHoldings();
+    }
+
     public boolean existsById(int holdingId) {
         return holdingRepository.existsById(holdingId);
     }
 
+    @Transactional(readOnly = true)
     public List<String> getDistinctTickers() {
         return holdingRepository.getDistinctTickers();
     }

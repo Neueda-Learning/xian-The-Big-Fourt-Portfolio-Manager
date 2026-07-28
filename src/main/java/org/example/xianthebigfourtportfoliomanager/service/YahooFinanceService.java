@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -25,16 +27,19 @@ public class YahooFinanceService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
+    private final String publicChartBaseUrl;
     private final PriceHistoryRepository priceHistoryRepository;
     private final Map<String, BigDecimal> priceCache = new ConcurrentHashMap<>();
 
     public YahooFinanceService(
             @Value("${yahoo.finance.base-url}") String baseUrl,
+            @Value("${yahoo.finance.chart-url:https://query1.finance.yahoo.com/v8/finance/chart}") String publicChartBaseUrl,
             PriceHistoryRepository priceHistoryRepository
     ) {
         this.restTemplate = new RestTemplate();
         this.objectMapper = new ObjectMapper();
         this.baseUrl = baseUrl;
+        this.publicChartBaseUrl = publicChartBaseUrl;
         this.priceHistoryRepository = priceHistoryRepository;
     }
 
@@ -45,36 +50,37 @@ public class YahooFinanceService {
         BigDecimal cached = priceCache.get(normalized);
         if (cached != null) return cached;
 
-        try {
-            String url = baseUrl + "?ticker=" + normalized;
-            String response = restTemplate.getForObject(url, String.class);
-            BigDecimal price = parsePrice(response, normalized);
-            if (price != null) {
-                priceCache.put(normalized, price);
-            }
-            return price;
-        } catch (Exception e) {
-            return null;
+        String response = fetchConfiguredApiResponse(normalized);
+        BigDecimal price = parsePrice(response, normalized);
+        if (price == null) {
+            response = fetchPublicYahooChartResponse(normalized);
+            price = parsePrice(response, normalized);
         }
+        if (price != null) {
+            priceCache.put(normalized, price);
+        }
+        return price;
     }
 
     public priceHistory fetchAndStoreCurrentPrice(String ticker) {
         if (ticker == null || ticker.isBlank()) return null;
         String normalized = ticker.toUpperCase();
 
-        try {
-            String url = baseUrl + "?ticker=" + normalized;
-            String response = restTemplate.getForObject(url, String.class);
-            List<priceHistory> savedRows = parseAndPersistSeries(response, normalized);
-            if (savedRows.isEmpty()) {
-                return null;
-            }
-            priceHistory latest = savedRows.get(savedRows.size() - 1);
-            priceCache.put(normalized, latest.getCloseprice());
-            return latest;
-        } catch (Exception e) {
+        String response = fetchConfiguredApiResponse(normalized);
+        List<priceHistory> savedRows = parseAndPersistSeries(response, normalized);
+        if (savedRows.isEmpty()) {
+            response = fetchPublicYahooChartResponse(normalized);
+            savedRows = parseAndPersistSeries(response, normalized);
+        }
+        if (savedRows.isEmpty()) {
             return null;
         }
+
+        priceHistory latest = savedRows.get(savedRows.size() - 1);
+        if (latest.getCloseprice() != null) {
+            priceCache.put(normalized, latest.getCloseprice());
+        }
+        return latest;
     }
 
     public void clearCache() {
@@ -104,6 +110,11 @@ public class YahooFinanceService {
             if (nestedPrice != null) {
                 return nestedPrice;
             }
+        }
+
+        BigDecimal chartPrice = extractLatestCloseFromChartJson(trimmed);
+        if (chartPrice != null) {
+            return chartPrice;
         }
 
         return null;
@@ -156,6 +167,11 @@ public class YahooFinanceService {
             JsonNode root = objectMapper.readTree(response);
             if (root.has("body") && root.get("body").isTextual()) {
                 root = objectMapper.readTree(root.get("body").asText());
+            }
+
+            List<priceHistory> chartRows = parseYahooChartSeries(root, response, ticker);
+            if (!chartRows.isEmpty()) {
+                return chartRows;
             }
 
             JsonNode priceData = root.path("price_data");
@@ -232,6 +248,67 @@ public class YahooFinanceService {
         return savedRows;
     }
 
+    private List<priceHistory> parseYahooChartSeries(JsonNode root, String response, String ticker) {
+        List<priceHistory> savedRows = new ArrayList<>();
+
+        JsonNode resultNode = root.path("chart").path("result");
+        if (!resultNode.isArray() || resultNode.size() == 0) {
+            return savedRows;
+        }
+
+        JsonNode result = resultNode.get(0);
+        JsonNode timestampArr = result.path("timestamp");
+        JsonNode quoteArr = result.path("indicators").path("quote");
+        JsonNode quote = quoteArr.isArray() && quoteArr.size() > 0 ? quoteArr.get(0) : null;
+        if (quote == null) {
+            return savedRows;
+        }
+
+        JsonNode closeArr = quote.path("close");
+        if (!timestampArr.isArray() || !closeArr.isArray() || timestampArr.size() == 0 || closeArr.size() == 0) {
+            return savedRows;
+        }
+
+        JsonNode meta = result.path("meta");
+        JsonNode adjCloseNode = result.path("indicators").path("adjclose");
+        JsonNode adjCloseArr = adjCloseNode.isArray() && !adjCloseNode.isEmpty() ? adjCloseNode.get(0).path("adjclose") : null;
+
+        int len = Math.min(timestampArr.size(), closeArr.size());
+        for (int i = 0; i < len; i++) {
+            LocalDateTime pointTime = parseTimestamp(timestampArr.get(i).asText(null));
+            if (pointTime == null) {
+                continue;
+            }
+
+            BigDecimal close = asDecimal(closeArr.get(i));
+            if (close == null) {
+                continue;
+            }
+
+            priceHistory row = new priceHistory();
+            row.setTicker(ticker);
+            row.setPriceDate(pointTime.toLocalDate());
+            row.setPricetime(pointTime);
+            row.setOpenprice(readArrayDecimal(quote.path("open"), i));
+            row.setHighprice(readArrayDecimal(quote.path("high"), i));
+            row.setLowprice(readArrayDecimal(quote.path("low"), i));
+            row.setCloseprice(close);
+            BigDecimal adjustedClose = readArrayDecimal(adjCloseArr, i);
+            row.setAdjustedclose(adjustedClose != null ? adjustedClose : close);
+            row.setVolume(readArrayLong(quote.path("volume"), i));
+            row.setCurrency(meta.path("currency").isTextual() ? meta.path("currency").asText() : null);
+            row.setRawpayload(i == len - 1 ? response : null);
+            row.setFetchedat(LocalDateTime.now());
+
+            priceHistory saved = priceHistoryRepository.saveOrUpdate(row);
+            if (saved != null) {
+                savedRows.add(saved);
+            }
+        }
+
+        return savedRows;
+    }
+
     private LocalDateTime parseTimestamp(String value) {
         if (value == null || value.isBlank()) return null;
         try {
@@ -247,12 +324,12 @@ public class YahooFinanceService {
     }
 
     private BigDecimal readArrayDecimal(JsonNode array, int index) {
-        if (!array.isArray() || index >= array.size()) return null;
+        if (array == null || !array.isArray() || index >= array.size()) return null;
         return asDecimal(array.get(index));
     }
 
     private Long readArrayLong(JsonNode array, int index) {
-        if (!array.isArray() || index >= array.size()) return null;
+        if (array == null || !array.isArray() || index >= array.size()) return null;
         JsonNode node = array.get(index);
         if (node == null || node.isNull()) return null;
         if (node.isIntegralNumber()) return node.asLong();
@@ -445,6 +522,82 @@ public class YahooFinanceService {
             }
         }
         return null;
+    }
+
+    private BigDecimal extractLatestCloseFromChartJson(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            if (root.has("body") && root.get("body").isTextual()) {
+                root = objectMapper.readTree(root.get("body").asText());
+            }
+
+            JsonNode resultNode = root.path("chart").path("result");
+            if (!resultNode.isArray() || resultNode.size() == 0) {
+                return null;
+            }
+
+            JsonNode result = resultNode.get(0);
+            BigDecimal metaPrice = asDecimal(result.path("meta").path("regularMarketPrice"));
+            if (metaPrice != null) {
+                return metaPrice;
+            }
+
+            JsonNode quoteArr = result.path("indicators").path("quote");
+            if (!quoteArr.isArray() || quoteArr.size() == 0) {
+                return null;
+            }
+
+            JsonNode closeArr = quoteArr.get(0).path("close");
+            if (!closeArr.isArray()) {
+                return null;
+            }
+
+            for (int i = closeArr.size() - 1; i >= 0; i--) {
+                BigDecimal close = asDecimal(closeArr.get(i));
+                if (close != null) {
+                    return close;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        return null;
+    }
+
+    private String fetchConfiguredApiResponse(String ticker) {
+        try {
+            String url = baseUrl + "?ticker=" + URLEncoder.encode(ticker, StandardCharsets.UTF_8);
+            return restTemplate.getForObject(url, String.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String fetchPublicYahooChartResponse(String ticker) {
+        try {
+            String providerTicker = toYahooProviderTicker(ticker);
+            String url = publicChartBaseUrl + "/" + URLEncoder.encode(providerTicker, StandardCharsets.UTF_8) + "?interval=5m&range=5d";
+            return restTemplate.getForObject(url, String.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String toYahooProviderTicker(String ticker) {
+        if (ticker == null) {
+            return null;
+        }
+        return switch (ticker.toUpperCase()) {
+            case "US10Y" -> "^TNX";
+            case "US5Y" -> "^FVX";
+            case "US30Y" -> "^TYX";
+            case "US2Y" -> "^IRX";
+            default -> ticker.toUpperCase();
+        };
     }
 
     private static class YahooSnapshot {
