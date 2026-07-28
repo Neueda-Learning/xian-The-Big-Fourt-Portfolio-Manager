@@ -40,27 +40,6 @@ public class HoldingRepository {
         return list.isEmpty() ? null : list.get(0);
     }
 
-    public List<Holding> getAllHoldings() {
-        String sql = "select * from holding order by portfolio_id asc, asset_type asc, ticker asc, id asc";
-        return jdbcTemplate.query(sql, (rs, rowNum) -> {
-            Date purchaseDate = rs.getDate("purchase_date");
-            Timestamp createAt = rs.getTimestamp("create_at");
-            Timestamp updateAt = rs.getTimestamp("updated_at");
-            return new Holding(
-                    rs.getInt("id"),
-                    rs.getInt("portfolio_id"),
-                    AssetType.valueOf(rs.getString("asset_type")),
-                    rs.getString("ticker"),
-                    rs.getBigDecimal("quantity"),
-                    rs.getBigDecimal("purchase_price"),
-                    purchaseDate == null ? null : purchaseDate.toLocalDate(),
-                    rs.getString("currency"),
-                    createAt == null ? null : createAt.toLocalDateTime(),
-                    updateAt == null ? null : updateAt.toLocalDateTime()
-            );
-        });
-    }
-
     public List<Holding> getHoldingsByPortfolioId(int portfolioId) {
         String sql = "select * from holding where portfolio_id = ?";
         return jdbcTemplate.query(sql, (rs, rowNum) -> {
@@ -80,11 +59,6 @@ public class HoldingRepository {
                     updateAt == null ? null : updateAt.toLocalDateTime()
             );
         }, portfolioId);
-    }
-
-    public List<String> getDistinctTickers() {
-        String sql = "select distinct upper(trim(ticker)) as ticker from holding where ticker is not null and trim(ticker) <> '' order by upper(trim(ticker))";
-        return jdbcTemplate.queryForList(sql, String.class);
     }
 
     public Holding save(Holding holding) {

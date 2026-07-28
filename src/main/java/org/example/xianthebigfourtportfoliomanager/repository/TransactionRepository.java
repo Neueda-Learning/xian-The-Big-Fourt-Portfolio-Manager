@@ -32,21 +32,6 @@ public class TransactionRepository {
         return list.isEmpty() ? null : list.get(0);
     }
 
-    public List<Transaction> getAllTransactions() {
-        String sql = "select * from `transaction` order by trade_date desc, id desc";
-        return jdbcTemplate.query(sql, (rs, rowNum) -> {
-            Timestamp tradeDate = rs.getTimestamp("trade_date");
-            return new Transaction(
-                    rs.getInt("id"),
-                    rs.getInt("holding_id"),
-                    rs.getString("type"),
-                    rs.getBigDecimal("quantity"),
-                    rs.getBigDecimal("price"),
-                    tradeDate == null ? null : tradeDate.toLocalDateTime()
-            );
-        });
-    }
-
     public List<Transaction> getTransactionsByHoldingId(int holdingId) {
         String sql = "select * from `transaction` where holding_id = ?";
         return jdbcTemplate.query(sql, (rs, rowNum) -> {

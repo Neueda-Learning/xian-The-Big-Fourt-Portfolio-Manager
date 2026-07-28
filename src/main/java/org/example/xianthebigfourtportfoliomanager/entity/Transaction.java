@@ -4,14 +4,17 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public class Transaction {
-    private int id;
-    private int holdingId;
+    private Integer id;
+    private Integer holdingId;
     private String type;
     private BigDecimal quantity;
     private BigDecimal price;
     private LocalDateTime tradeDate;
 
-    public Transaction(int id, int holdingId, String type, BigDecimal quantity, BigDecimal price, LocalDateTime tradeDate) {
+    public Transaction() {
+    }
+
+    public Transaction(Integer id, Integer holdingId, String type, BigDecimal quantity, BigDecimal price, LocalDateTime tradeDate) {
         this.id = id;
         this.holdingId = holdingId;
         this.type = type;
@@ -20,11 +23,11 @@ public class Transaction {
         this.tradeDate = tradeDate;
     }
 
-    public int getId() {
+    public Integer getId() {
         return id;
     }
 
-    public int getHoldingId() {
+    public Integer getHoldingId() {
         return holdingId;
     }
 
@@ -44,11 +47,11 @@ public class Transaction {
         return tradeDate;
     }
 
-    public void setId(int id) {
+    public void setId(Integer id) {
         this.id = id;
     }
 
-    public void setHoldingId(int holdingId) {
+    public void setHoldingId(Integer holdingId) {
         this.holdingId = holdingId;
     }
 

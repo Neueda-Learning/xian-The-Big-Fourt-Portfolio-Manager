@@ -1,0 +1,20 @@
+export const icons = {
+    home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.4 12 4l9 7.4v8.6a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>',
+    holdings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h8v14H3zM13 5h8v6h-8zM13 13h8v6h-8z"/></svg>',
+    transactions: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h13l-2.8-2.8L15.6 3 21 8.4 15.6 14l-1.4-1.4L17 9H4zM20 17H7l2.8 2.8L8.4 21 3 15.6 8.4 10l1.4 1.4L7 15h13z"/></svg>',
+    performance: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h16v2H2V4h2zM8 14l3-3 2 2 5-6 1.5 1.2-6 7.2-2-2-2.8 2.8z"/></svg>',
+    reports: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l4 4v14H5zm9 1.5V8h3.5zM8 12h8v1.8H8zm0 3.6h8v1.8H8z"/></svg>',
+    settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 8.6 1-2.6h2.3l.7 2a6.7 6.7 0 0 1 1.9 1.1l2.1-.8 1.1 2-1.6 1.6a6.5 6.5 0 0 1 0 2.2l1.6 1.6-1.1 2-2.1-.8c-.6.5-1.2.8-1.9 1.1l-.7 2H13l-1-2.6a6.8 6.8 0 0 1-2 0L9 20H6.7l-.7-2a6.7 6.7 0 0 1-1.9-1.1l-2.1.8-1.1-2 1.6-1.6a6.5 6.5 0 0 1 0-2.2L.9 10.3l1.1-2 2.1.8c.6-.5 1.2-.8 1.9-1.1l.7-2H9l1 2.6c.7-.1 1.3-.1 2 0M12 9.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4"/></svg>',
+    sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10m0-5 1.2 2.5H10.8zm0 20 1.2-2.5H10.8zM4.9 5l2.5 1.2L6.2 7.4zM19.1 19l-2.5-1.2 1.2-1.2zM2 12l2.5-1.2v2.4zM22 12l-2.5-1.2v2.4zM4.9 19l1.3-2.4 1.2 1.2zM19.1 5l-1.3 2.4-1.2-1.2z"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2.7 2.7 0 0 0 2.5-2h-5A2.7 2.7 0 0 0 12 22M20 18H4v-1.5l2-2v-4a6 6 0 1 1 12 0v4l2 2z"/></svg>',
+    chevronDown: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6-1.4-1.4-4.6 4.6-4.6-4.6z"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>',
+    trend: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17h4v3H4zm6-6h4v9h-4zm6-5h4v14h-4z"/></svg>',
+    wallet: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a3 3 0 0 1 3-3h13v4h2v12H6a3 3 0 0 1-3-3zm16 6h2v2h-2z"/></svg>',
+    check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 16.6-4.8-4.8 1.4-1.4 3.4 3.4 8-8 1.4 1.4z"/></svg>',
+    search: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12m8.7 13.3 3.3 3.3-1.4 1.4-3.3-3.3z"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.3V20h2.7l8-8-2.7-2.7zm12.9-10a1 1 0 0 1 1.4 0l1.4 1.4a1 1 0 0 1 0 1.4l-1.2 1.2-2.8-2.8z"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4zm-1 6h2v9H8zm6 0h2v9h-2z"/></svg>',
+    info: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m-1 5h2v2h-2zm0 4h2v6h-2z"/></svg>',
+    menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>'
+};

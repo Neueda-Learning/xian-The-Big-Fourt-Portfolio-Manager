@@ -1,8 +1,10 @@
 package org.example.xianthebigfourtportfoliomanager.service;
 
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
+import org.example.xianthebigfourtportfoliomanager.entity.priceHistory;
 import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
 import org.example.xianthebigfourtportfoliomanager.repository.HoldingRepository;
+import org.example.xianthebigfourtportfoliomanager.repository.PriceHistoryRepository;
 import org.example.xianthebigfourtportfoliomanager.repository.PortfolioRepository;
 import org.springframework.stereotype.Service;
 
@@ -14,15 +16,24 @@ import java.util.List;
 @Service
 public class PerformanceService {
 
+    /**
+     * Eren issue: gain/loss could remain zero when live quotes failed, because valuation fell back too quickly to purchase cost.
+     * Fix: resolve current price with this order: local latest close -> Yahoo quote -> purchase price.
+     * Reviewer: GitHub Copilot (GPT-5.3-Codex).
+     */
+
     private final PortfolioRepository portfolioRepository;
     private final HoldingRepository holdingRepository;
+    private final PriceHistoryRepository priceHistoryRepository;
     private final YahooFinanceService yahooFinanceService;
 
     public PerformanceService(PortfolioRepository portfolioRepository,
                               HoldingRepository holdingRepository,
+                              PriceHistoryRepository priceHistoryRepository,
                               YahooFinanceService yahooFinanceService) {
         this.portfolioRepository = portfolioRepository;
         this.holdingRepository = holdingRepository;
+        this.priceHistoryRepository = priceHistoryRepository;
         this.yahooFinanceService = yahooFinanceService;
     }
 
@@ -36,7 +47,7 @@ public class PerformanceService {
         List<HoldingDetail> details = new ArrayList<>();
 
         for (Holding h : holdings) {
-            BigDecimal currentPrice = yahooFinanceService.getCurrentPrice(h.getTicker());
+            BigDecimal currentPrice = resolveCurrentPrice(h);
             if (currentPrice == null) currentPrice = h.getPurchasePrice();
             if (currentPrice == null) currentPrice = BigDecimal.ZERO;
 
@@ -61,6 +72,28 @@ public class PerformanceService {
 
         return new PerformanceResult(portfolioId, portf.getName(),
             totalMarketValue, totalCost, totalReturn, returnRate, details);
+    }
+
+    private BigDecimal resolveCurrentPrice(Holding holding) {
+        if (holding == null) {
+            return null;
+        }
+
+        String ticker = holding.getTicker();
+        if (ticker == null || ticker.isBlank()) {
+            return null;
+        }
+
+        if ("CASH".equalsIgnoreCase(ticker)) {
+            return BigDecimal.ONE;
+        }
+
+        priceHistory latest = priceHistoryRepository.getLatestPriceByTicker(ticker.toUpperCase());
+        if (latest != null && latest.getCloseprice() != null) {
+            return latest.getCloseprice();
+        }
+
+        return yahooFinanceService.getCurrentPrice(ticker);
     }
 
     public static class PerformanceResult {
