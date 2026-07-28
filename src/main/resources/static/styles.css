@@ -19,6 +19,12 @@
     --shadow-card: 0 8px 24px rgba(15, 23, 42, 0.05);
 }
 
+/*
+ * Eren issue: new portfolio/manager UI controls overlapped or collapsed on smaller layouts.
+ * Fix: add dedicated header control styles, manager form grid rules, and responsive fallbacks.
+ * Reviewer: GitHub Copilot (GPT-5.3-Codex).
+ */
+
 body.dark-theme {
     --bg: #0b1220;
     --card-bg: #111827;
@@ -267,6 +273,30 @@ select:focus-visible {
     justify-content: space-between;
     margin-bottom: 18px;
     gap: 12px;
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.header-select-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.header-select {
+    height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0 10px;
+    background: var(--card-bg);
+    color: var(--text-primary);
 }
 
 .dashboard-header h1 {
@@ -743,6 +773,44 @@ th {
     padding: 12px;
 }
 
+.manager-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+    margin-bottom: 10px;
+}
+
+.manager-grid label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.manager-grid input,
+.manager-grid select {
+    height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0 10px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+
+.manager-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.loading-wrap {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
 .modal label {
     display: block;
     font-size: 13px;
@@ -837,6 +905,16 @@ th {
         align-items: flex-start;
     }
 
+    .header-controls {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .header-select-wrap,
+    .header-select {
+        width: 100%;
+    }
+
     .summary-grid {
         grid-template-columns: 1fr;
     }
@@ -856,6 +934,10 @@ th {
     }
 
     .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .manager-grid {
         grid-template-columns: 1fr;
     }
 }

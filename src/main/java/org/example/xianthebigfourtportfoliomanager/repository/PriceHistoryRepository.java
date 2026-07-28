@@ -49,6 +49,28 @@ public class PriceHistoryRepository {
         }, ticker, startDate, endDate);
     }
 
+    /**
+     * Eren issue: when Yahoo quote was unavailable, gain/loss stayed flat because no local latest-price fallback existed.
+     * Fix: expose a latest close-price query so valuation can fall back to local price_history before purchase cost.
+     * Reviewer: GitHub Copilot (GPT-5.3-Codex).
+     */
+
+    public priceHistory getLatestPriceByTicker(String ticker) {
+        String sql = "select * from price_history where ticker = ? order by price_date desc limit 1";
+        List<priceHistory> list = jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Date priceDate = rs.getDate("price_date");
+            Timestamp createAt = rs.getTimestamp("create_at");
+            return new priceHistory(
+                    rs.getInt("id"),
+                    rs.getString("ticker"),
+                    priceDate == null ? null : priceDate.toLocalDate(),
+                    rs.getBigDecimal("close_price"),
+                    createAt == null ? null : createAt.toLocalDateTime()
+            );
+        }, ticker);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
     public priceHistory save(priceHistory priceHistory) {
         String sql = "insert into price_history (ticker, price_date, close_price) values (?, ?, ?)";
         int rows = jdbcTemplate.update(sql, priceHistory.getTicker(), priceHistory.getPriceDate(), priceHistory.getCloseprice());

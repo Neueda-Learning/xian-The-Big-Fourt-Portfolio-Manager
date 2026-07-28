@@ -10,17 +10,24 @@ import { RecentTransactions } from "./js/components/RecentTransactions.js";
 import { AddAssetModal } from "./js/components/AddAssetModal.js";
 import { ConfirmDeleteModal } from "./js/components/ConfirmDeleteModal.js";
 import { icons } from "./js/components/icons.js";
-import { allocationTarget, generatePerformanceData, initialHoldings, initialTransactions } from "./js/data/mockData.js";
-import { compactDate, formatCurrency, formatPercent, formatSignedCurrency } from "./js/utils/formatters.js";
+import { generatePerformanceData } from "./js/data/mockData.js";
+import { compactDate, formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "./js/utils/formatters.js";
 
 const appRoot = document.getElementById("app");
 const savedTheme = window.localStorage.getItem("pm-theme");
 
 const state = {
-    holdings: [...initialHoldings],
-    transactions: [...initialTransactions],
-    performanceData: generatePerformanceData(380),
-    allocationData: allocationTarget,
+    portfolios: [],
+    selectedPortfolioId: null,
+    holdingsRaw: [],
+    holdings: [],
+    transactions: [],
+    priceHistory: [],
+    performance: null,
+    performanceData: [],
+    allocationData: [],
+    loading: true,
+    globalError: "",
     searchTerm: "",
     selectedType: "All Types",
     selectedRange: "1Y",
@@ -29,7 +36,10 @@ const state = {
     deleteTargetId: null,
     sidebarOpen: false,
     activeNav: "Dashboard",
-    darkMode: savedTheme === "dark"
+    darkMode: savedTheme === "dark",
+    editingTransactionId: null,
+    priceMessage: "",
+    transactionMessage: ""
 };
 
 let performanceChart;
@@ -37,8 +47,230 @@ let allocationChart;
 let lastFocusedElement;
 let escapeHandlerBound = false;
 
-function computeMetrics() {
+/*
+ * Eren issue: frontend initially used local mock state and chart slicing that masked real backend updates.
+ * Fix: migrate to API-driven state loading/refresh and make time-range chart data react to real dates and post-close trades.
+ * Reviewer: GitHub Copilot (GPT-5.3-Codex).
+ */
+
+async function apiRequest(path, options = {}) {
+    const response = await fetch(path, {
+        headers: {
+            "Content-Type": "application/json",
+            ...(options.headers || {})
+        },
+        ...options
+    });
+
+    const text = await response.text();
+    const isJson = (response.headers.get("content-type") || "").includes("application/json");
+    const payload = isJson && text ? JSON.parse(text) : text;
+
+    if (!response.ok) {
+        const message = typeof payload === "string" ? payload : payload?.message || "Request failed";
+        throw new Error(message);
+    }
+
+    return payload;
+}
+
+function normalizeHolding(rawHolding, detailMap) {
+    const detail = detailMap.get(rawHolding.id);
+    const typeLabel = String(rawHolding.assetType || "Stock").toLowerCase();
+    const type = typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1);
+    const ticker = rawHolding.ticker || rawHolding.assetType || `ASSET-${rawHolding.id}`;
+
+    return {
+        id: rawHolding.id,
+        portfolioId: rawHolding.portfolioId,
+        ticker,
+        name: ticker,
+        type,
+        quantity: Number(rawHolding.quantity || 0),
+        avgPrice: Number(rawHolding.purchasePrice || 0),
+        currentPrice: Number(detail?.currentPrice || rawHolding.purchasePrice || 0),
+        currency: rawHolding.currency || "USD",
+        purchasedata: rawHolding.purchasedata
+    };
+}
+
+function normalizeTransaction(rawTx, holdingMap) {
+    const holdingTicker = holdingMap.get(rawTx.holdingId)?.ticker || `Holding-${rawTx.holdingId}`;
+    const txType = String(rawTx.type || "BUY").toUpperCase();
+    const quantity = Number(rawTx.quantity || 0);
+    const price = Number(rawTx.price || 0);
+    const amount = txType === "SELL" ? quantity * price : -(quantity * price);
+
+    return {
+        id: rawTx.id,
+        holdingId: rawTx.holdingId,
+        date: new Intl.DateTimeFormat("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric"
+        }).format(new Date(rawTx.tradeDate)),
+        dateRaw: rawTx.tradeDate,
+        type: holdingMap.get(rawTx.holdingId)?.type || "Stock",
+        asset: holdingTicker,
+        action: txType === "SELL" ? "Sell" : "Buy",
+        txType,
+        quantity,
+        price,
+        amount
+    };
+}
+
+function buildFallbackPerformanceSeries(totalValue) {
+    const generated = generatePerformanceData(120);
+    const baseline = generated[generated.length - 1]?.value || 1;
+    const target = totalValue > 0 ? totalValue : 100000;
+    return generated.map((item) => ({
+        date: item.date,
+        value: Number(((item.value / baseline) * target).toFixed(2))
+    }));
+}
+
+function rebuildAllocationData() {
+    const total = state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
+    if (total <= 0) {
+        state.allocationData = [];
+        return;
+    }
+
+    const colorMap = {
+        Stock: "#3b82f6",
+        Bond: "#22c55e",
+        Cash: "#f59e0b"
+    };
+
+    const grouped = new Map();
+    state.holdings.forEach((item) => {
+        const value = item.quantity * item.currentPrice;
+        grouped.set(item.type, (grouped.get(item.type) || 0) + value);
+    });
+
+    state.allocationData = Array.from(grouped.entries()).map(([label, value]) => ({
+        label: `${label}s`,
+        value: Number(((value / total) * 100).toFixed(1)),
+        color: colorMap[label] || "#8b5cf6"
+    }));
+}
+
+function buildPerformanceSeries() {
+    if (state.priceHistory.length > 1) {
+        const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
+        const ordered = [...state.priceHistory].sort((a, b) => new Date(a.priceDate).getTime() - new Date(b.priceDate).getTime());
+        const lastPriceDate = new Date(`${ordered[ordered.length - 1].priceDate}T23:59:59`);
+        const holdingPriceMap = new Map(state.holdings.map((item) => [item.id, Number(item.currentPrice || item.avgPrice || 0)]));
+        const postCloseImpact = state.transactions
+            .filter((tx) => new Date(tx.dateRaw).getTime() > lastPriceDate.getTime())
+            .reduce((sum, tx) => {
+                const qty = Number(tx.quantity || 0);
+                const tradePrice = Number(tx.price || 0);
+                const currentPrice = Number(holdingPriceMap.get(tx.holdingId) || tradePrice);
+                if (String(tx.txType).toUpperCase() === "SELL") {
+                    return sum + qty * (tradePrice - currentPrice);
+                }
+                return sum + qty * (currentPrice - tradePrice);
+            }, 0);
+        const referenceTotal = totalValue - postCloseImpact;
+        const lastClose = Number(ordered[ordered.length - 1]?.closeprice || 0);
+
+        state.performanceData = ordered.map((item) => {
+            const close = Number(item.closeprice || 0);
+            const scaled = lastClose > 0 ? (close / lastClose) * referenceTotal : referenceTotal;
+            return {
+                date: new Date(`${item.priceDate}T16:00:00`),
+                value: Number(scaled.toFixed(2))
+            };
+        });
+
+        const now = new Date();
+        const latestPoint = state.performanceData[state.performanceData.length - 1];
+        if (!latestPoint || latestPoint.date.toDateString() !== now.toDateString()) {
+            state.performanceData.push({
+                date: now,
+                value: Number(totalValue.toFixed(2))
+            });
+        } else {
+            latestPoint.value = Number(totalValue.toFixed(2));
+        }
+
+        return;
+    }
+
     const totalValue = state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
+    state.performanceData = buildFallbackPerformanceSeries(totalValue);
+}
+
+async function refreshPortfolioData() {
+    if (!state.selectedPortfolioId) {
+        state.holdingsRaw = [];
+        state.holdings = [];
+        state.transactions = [];
+        state.priceHistory = [];
+        state.performance = null;
+        state.performanceData = buildFallbackPerformanceSeries(0);
+        state.allocationData = [];
+        return;
+    }
+
+    const holdingsRaw = await apiRequest(`/holdings/portfolio/${state.selectedPortfolioId}`);
+    state.holdingsRaw = Array.isArray(holdingsRaw) ? holdingsRaw : [];
+
+    state.performance = await apiRequest(`/portfolio/${state.selectedPortfolioId}/performance`);
+    const detailMap = new Map((state.performance?.holdingsDetail || []).map((item) => [item.holdingId, item]));
+    state.holdings = state.holdingsRaw.map((item) => normalizeHolding(item, detailMap));
+
+    const holdingMap = new Map(state.holdings.map((item) => [item.id, item]));
+    const txResult = await Promise.all(
+        state.holdings.map(async (holding) => {
+            const rows = await apiRequest(`/transactions/holding/${holding.id}`);
+            return Array.isArray(rows) ? rows : [];
+        })
+    );
+    const flattened = txResult.flat();
+    state.transactions = flattened
+        .map((item) => normalizeTransaction(item, holdingMap))
+        .sort((a, b) => new Date(b.dateRaw).getTime() - new Date(a.dateRaw).getTime());
+
+    const primaryTicker = state.holdings.find((item) => item.ticker && item.type !== "Cash")?.ticker;
+    if (primaryTicker) {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - 30);
+        const format = (date) => date.toISOString().slice(0, 10);
+        const query = `startDate=${format(startDate)}&endDate=${format(endDate)}`;
+        const priceRows = await apiRequest(`/prices/${encodeURIComponent(primaryTicker)}?${query}`);
+        state.priceHistory = Array.isArray(priceRows) ? priceRows : [];
+    } else {
+        state.priceHistory = [];
+    }
+
+    rebuildAllocationData();
+    buildPerformanceSeries();
+}
+
+async function loadInitialData() {
+    state.loading = true;
+    state.globalError = "";
+    render();
+
+    try {
+        const portfolios = await apiRequest("/portfolios");
+        state.portfolios = Array.isArray(portfolios) ? portfolios : [];
+        state.selectedPortfolioId = state.portfolios[0]?.id || null;
+        await refreshPortfolioData();
+    } catch (error) {
+        state.globalError = error.message;
+    } finally {
+        state.loading = false;
+        render();
+    }
+}
+
+function computeMetrics() {
+    const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
     const totalCost = state.holdings.reduce((sum, item) => sum + item.quantity * item.avgPrice, 0);
     const totalGain = totalValue - totalCost;
     const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
@@ -64,17 +296,32 @@ function computeMetrics() {
 
 function getPerformanceDataByRange(range) {
     const data = state.performanceData;
-    const rangeMap = {
+    if (!data.length) {
+        return [];
+    }
+
+    const ordered = [...data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    if (range === "ALL") {
+        return ordered;
+    }
+
+    const daysMap = {
         "1D": 1,
         "1W": 7,
         "1M": 30,
         "3M": 90,
-        "1Y": 365,
-        ALL: data.length
+        "1Y": 365
     };
 
-    const count = rangeMap[range] || 365;
-    return data.slice(Math.max(0, data.length - count));
+    const days = daysMap[range] || 365;
+    const endTime = new Date(ordered[ordered.length - 1].date).getTime();
+    const startTime = endTime - days * 24 * 60 * 60 * 1000;
+    const filtered = ordered.filter((item) => new Date(item.date).getTime() >= startTime);
+
+    if (filtered.length >= 2) {
+        return filtered;
+    }
+    return ordered.slice(Math.max(0, ordered.length - 2));
 }
 
 function buildSparklineSvg() {
@@ -113,14 +360,14 @@ function getEditingAsset() {
     if (!state.editingAssetId) {
         return null;
     }
-    return state.holdings.find((holding) => holding.id === state.editingAssetId) || null;
+    return state.holdings.find((holding) => Number(holding.id) === Number(state.editingAssetId)) || null;
 }
 
 function getDeleteTargetAsset() {
     if (!state.deleteTargetId) {
         return null;
     }
-    return state.holdings.find((holding) => holding.id === state.deleteTargetId) || null;
+    return state.holdings.find((holding) => Number(holding.id) === Number(state.deleteTargetId)) || null;
 }
 
 function getViewConfig(metrics) {
@@ -155,7 +402,8 @@ function getViewConfig(metrics) {
             showAddAsset: false,
             showSummary: false,
             showPerformance: false,
-            showHoldings: false
+            showHoldings: false,
+            transactionsMarkup: renderTransactionManager()
         };
     }
 
@@ -166,7 +414,8 @@ function getViewConfig(metrics) {
             subtitle: "Analyze portfolio growth and allocation trends",
             showAddAsset: false,
             showHoldings: false,
-            showTransactions: false
+            showTransactions: false,
+            transactionsMarkup: renderPriceHistoryManager()
         };
     }
 
@@ -235,6 +484,132 @@ function renderSettingsPanel() {
     `;
 }
 
+function renderTransactionManager() {
+    const holdingOptions = state.holdings
+        .map((holding) => `<option value="${holding.id}">${holding.ticker} (Holding #${holding.id})</option>`)
+        .join("");
+
+    return `
+        <article class="card info-panel">
+            <h2>Transaction Manager</h2>
+            <p>Create, edit, and delete transaction records for the selected portfolio.</p>
+            <form id="transaction-form" class="manager-grid" novalidate>
+                <label>Holding</label>
+                <select name="holdingId" required>${holdingOptions}</select>
+
+                <label>Type</label>
+                <select name="type" required>
+                    <option value="BUY">BUY</option>
+                    <option value="SELL">SELL</option>
+                </select>
+
+                <label>Quantity</label>
+                <input name="quantity" type="number" min="0.0001" step="0.0001" required>
+
+                <label>Price</label>
+                <input name="price" type="number" min="0.0001" step="0.0001" required>
+
+                <label>Trade Time</label>
+                <input name="tradeDate" type="datetime-local" required>
+
+                <div class="manager-actions">
+                    <button type="submit" class="primary-btn">Add Transaction</button>
+                </div>
+            </form>
+            <p class="form-error" id="transaction-message">${toInputSafeText(state.transactionMessage)}</p>
+            <div class="table-scroller">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Asset</th>
+                        <th>Type</th>
+                        <th>Qty</th>
+                        <th>Price</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                        ${state.transactions
+                            .slice(0, 20)
+                            .map(
+                                (item) => `
+                            <tr>
+                                <td>${item.id}</td>
+                                <td>${toInputSafeText(item.asset)}</td>
+                                <td>${item.txType}</td>
+                                <td>${item.quantity}</td>
+                                <td>${formatCurrency(item.price)}</td>
+                                <td>${toInputSafeText(item.date)}</td>
+                                <td>
+                                    <button class="icon-btn small" type="button" data-tx-delete="${item.id}">${icons.trash}</button>
+                                </td>
+                            </tr>
+                        `
+                            )
+                            .join("")}
+                    </tbody>
+                </table>
+            </div>
+        </article>
+    `;
+}
+
+function renderPriceHistoryManager() {
+    return `
+        <article class="card info-panel">
+            <h2>Price History Manager</h2>
+            <p>Manage end-of-day prices used by performance charts.</p>
+            <form id="price-form" class="manager-grid" novalidate>
+                <label>Ticker</label>
+                <input name="ticker" type="text" maxlength="20" required>
+
+                <label>Price Date</label>
+                <input name="priceDate" type="date" required>
+
+                <label>Close Price</label>
+                <input name="closeprice" type="number" min="0.0001" step="0.0001" required>
+
+                <div class="manager-actions">
+                    <button type="submit" class="primary-btn">Add Price</button>
+                </div>
+            </form>
+            <p class="form-error" id="price-message">${toInputSafeText(state.priceMessage)}</p>
+            <div class="table-scroller">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Date</th>
+                        <th>Close</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                        ${state.priceHistory
+                            .slice(-30)
+                            .reverse()
+                            .map(
+                                (item) => `
+                            <tr>
+                                <td>${toInputSafeText(item.ticker)}</td>
+                                <td>${toInputSafeText(item.priceDate)}</td>
+                                <td>${formatCurrency(Number(item.closeprice || 0))}</td>
+                                <td>
+                                    <button class="icon-btn small" type="button" data-price-delete="${item.ticker}|${item.priceDate}">${icons.trash}</button>
+                                </td>
+                            </tr>
+                        `
+                            )
+                            .join("")}
+                    </tbody>
+                </table>
+            </div>
+        </article>
+    `;
+}
+
 function applyTheme() {
     document.body.classList.toggle("dark-theme", state.darkMode);
     window.localStorage.setItem("pm-theme", state.darkMode ? "dark" : "light");
@@ -246,6 +621,12 @@ function toggleTheme() {
 }
 
 function render() {
+    if (state.loading) {
+        appRoot.innerHTML = `<div class="loading-wrap">Loading portfolio data...</div>`;
+        applyTheme();
+        return;
+    }
+
     const metrics = computeMetrics();
     const view = getViewConfig(metrics);
 
@@ -288,6 +669,15 @@ function render() {
     const charts = view.showPerformance ? `${PortfolioPerformanceChart(state.selectedRange)}${AssetAllocationChart(state.allocationData)}` : "";
     const holdingsMarkup = view.holdingsMarkup || (view.showHoldings ? HoldingsTable(state.holdings, state.searchTerm, state.selectedType) : "");
     const transactionsMarkup = view.transactionsMarkup || (view.showTransactions ? RecentTransactions(state.transactions) : "");
+    const portfolioOptions = state.portfolios
+        .map(
+            (item) =>
+                `<option value="${item.id}" ${item.id === state.selectedPortfolioId ? "selected" : ""}>${toInputSafeText(item.name || `Portfolio ${item.id}`)}</option>`
+        )
+        .join("");
+    const globalErrorMarkup = state.globalError
+        ? `<article class="card info-panel"><h2>System Message</h2><p class="form-error">${toInputSafeText(state.globalError)}</p></article>`
+        : "";
 
     appRoot.innerHTML = AppLayout({
         topNavbar: TopNavbar(),
@@ -299,9 +689,10 @@ function render() {
         header: DashboardHeader({
             title: view.title,
             subtitle: view.subtitle,
-            showAddAsset: view.showAddAsset
+            showAddAsset: view.showAddAsset,
+            extraControls: `<label class="header-select-wrap">Portfolio<select id="portfolio-switch" class="header-select">${portfolioOptions}</select></label>`
         }),
-        summaryCards: view.showSummary ? summaryCards : "",
+        summaryCards: view.showSummary ? summaryCards : globalErrorMarkup,
         charts,
         holdingsTable: holdingsMarkup,
         recentTransactions: transactionsMarkup,
@@ -311,7 +702,18 @@ function render() {
 
     document.body.classList.toggle("sidebar-open", state.sidebarOpen);
     applyTheme();
-    initCharts(metrics.totalValue);
+    if (view.showPerformance) {
+        initCharts(metrics.totalValue);
+    } else {
+        if (performanceChart) {
+            performanceChart.destroy();
+            performanceChart = null;
+        }
+        if (allocationChart) {
+            allocationChart.destroy();
+            allocationChart = null;
+        }
+    }
     bindEvents();
 
     if (state.addModalOpen) {
@@ -470,6 +872,23 @@ function bindEvents() {
         });
     }
 
+    const portfolioSwitch = document.getElementById("portfolio-switch");
+    if (portfolioSwitch) {
+        portfolioSwitch.addEventListener("change", async (event) => {
+            state.selectedPortfolioId = Number(event.target.value);
+            state.loading = true;
+            render();
+            try {
+                await refreshPortfolioData();
+            } catch (error) {
+                state.globalError = error.message;
+            } finally {
+                state.loading = false;
+                render();
+            }
+        });
+    }
+
     const settingsThemeBtn = document.getElementById("settings-theme-toggle");
     if (settingsThemeBtn) {
         settingsThemeBtn.addEventListener("click", () => {
@@ -486,6 +905,91 @@ function bindEvents() {
             state.activeNav = target;
             state.sidebarOpen = false;
             render();
+        });
+    });
+
+    const transactionForm = document.getElementById("transaction-form");
+    if (transactionForm) {
+        transactionForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const formData = new FormData(transactionForm);
+            try {
+                const payload = {
+                    holdingId: Number(formData.get("holdingId")),
+                    type: String(formData.get("type") || "BUY").toUpperCase(),
+                    quantity: Number(formData.get("quantity")),
+                    price: Number(formData.get("price")),
+                    tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
+                };
+                await apiRequest("/savetransaction", {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                });
+                state.transactionMessage = "Transaction saved.";
+                await refreshPortfolioData();
+                render();
+            } catch (error) {
+                state.transactionMessage = error.message;
+                render();
+            }
+        });
+    }
+
+    document.querySelectorAll("[data-tx-delete]").forEach((button) => {
+        button.addEventListener("click", async () => {
+            try {
+                await apiRequest(`/delete/transaction/${button.dataset.txDelete}`, { method: "DELETE" });
+                state.transactionMessage = "Transaction deleted.";
+                await refreshPortfolioData();
+                render();
+            } catch (error) {
+                state.transactionMessage = error.message;
+                render();
+            }
+        });
+    });
+
+    const priceForm = document.getElementById("price-form");
+    if (priceForm) {
+        priceForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const formData = new FormData(priceForm);
+            try {
+                const payload = {
+                    ticker: String(formData.get("ticker") || "").trim().toUpperCase(),
+                    priceDate: String(formData.get("priceDate") || "").trim(),
+                    closeprice: Number(formData.get("closeprice"))
+                };
+                await apiRequest("/saveprice", {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                });
+                state.priceMessage = "Price record saved.";
+                await refreshPortfolioData();
+                render();
+            } catch (error) {
+                state.priceMessage = error.message;
+                render();
+            }
+        });
+    }
+
+    document.querySelectorAll("[data-price-delete]").forEach((button) => {
+        button.addEventListener("click", async () => {
+            const [ticker, date] = String(button.dataset.priceDelete || "").split("|");
+            if (!ticker || !date) {
+                return;
+            }
+            try {
+                const query = `ticker=${encodeURIComponent(ticker)}&date=${encodeURIComponent(date)}`;
+                await apiRequest(`/delete/price?${query}`, { method: "DELETE" });
+                state.priceMessage = "Price record deleted.";
+                await refreshPortfolioData();
+                render();
+            } catch (error) {
+                state.priceMessage = error.message;
+                render();
+            }
         });
     });
 
@@ -525,7 +1029,7 @@ function bindEvents() {
     document.querySelectorAll("[data-delete-id]").forEach((button) => {
         button.addEventListener("click", () => {
             lastFocusedElement = document.activeElement;
-            state.deleteTargetId = button.dataset.deleteId;
+            state.deleteTargetId = Number(button.dataset.deleteId);
             render();
         });
     });
@@ -533,7 +1037,7 @@ function bindEvents() {
     document.querySelectorAll("[data-edit-id]").forEach((button) => {
         button.addEventListener("click", () => {
             lastFocusedElement = document.activeElement;
-            state.editingAssetId = button.dataset.editId;
+            state.editingAssetId = Number(button.dataset.editId);
             state.addModalOpen = true;
             render();
         });
@@ -562,7 +1066,7 @@ function bindAddAssetModalEvents() {
         }
     });
 
-    form?.addEventListener("submit", (event) => {
+    form?.addEventListener("submit", async (event) => {
         event.preventDefault();
         const formData = new FormData(form);
         const ticker = String(formData.get("ticker") || "").trim().toUpperCase();
@@ -580,54 +1084,42 @@ function bindAddAssetModalEvents() {
             return;
         }
 
-        const currentPrice = type === "Cash" ? price : Number((price * 1.04).toFixed(2));
+        const enumType = type.toUpperCase();
+        const payload = {
+            portfolioId: state.selectedPortfolioId,
+            assetType: enumType,
+            ticker: enumType === "CASH" ? "CASH" : ticker,
+            quantity,
+            purchasePrice: price,
+            purchasedata: new Date().toISOString().slice(0, 10),
+            currency: "USD"
+        };
 
-        if (state.editingAssetId) {
-            state.holdings = state.holdings.map((holding) => {
-                if (holding.id !== state.editingAssetId) {
-                    return holding;
-                }
-                return {
-                    ...holding,
-                    id: ticker,
-                    ticker,
-                    name,
-                    type,
-                    quantity,
-                    avgPrice: price,
-                    currentPrice
-                };
-            });
-        } else {
-            state.holdings.unshift({
-                id: ticker,
-                ticker,
-                name,
-                type,
-                quantity,
-                avgPrice: price,
-                currentPrice,
-                currency: "USD"
-            });
+        try {
+            if (state.editingAssetId) {
+                await apiRequest(`/holding/${state.editingAssetId}`, {
+                    method: "PATCH",
+                    body: JSON.stringify(payload)
+                });
+            } else {
+                await apiRequest("/saveholding", {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                });
+            }
 
-            state.transactions.unshift({
-                id: `txn-${Date.now()}`,
-                date: new Intl.DateTimeFormat("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric"
-                }).format(new Date()),
-                type,
-                asset: ticker,
-                action: "Buy",
-                quantity,
-                price,
-                amount: -(quantity * price)
-            });
+            state.globalError = "";
+            closeAddAssetModal();
+            state.loading = true;
+            render();
+            await refreshPortfolioData();
+        } catch (submitError) {
+            error.textContent = submitError.message;
+            return;
+        } finally {
+            state.loading = false;
+            render();
         }
-
-        closeAddAssetModal();
-        render();
     });
 }
 
@@ -642,14 +1134,24 @@ function bindDeleteModalEvents() {
 
     cancelButton?.addEventListener("click", () => closeDeleteModal());
 
-    confirmButton?.addEventListener("click", () => {
+    confirmButton?.addEventListener("click", async () => {
         if (!state.deleteTargetId) {
             return;
         }
-        state.holdings = state.holdings.filter((holding) => holding.id !== state.deleteTargetId);
-        state.deleteTargetId = null;
-        render();
-        restoreFocus();
+        try {
+            await apiRequest(`/delete/holding/${state.deleteTargetId}`, { method: "DELETE" });
+            state.deleteTargetId = null;
+            state.loading = true;
+            render();
+            await refreshPortfolioData();
+            state.loading = false;
+            render();
+            restoreFocus();
+        } catch (error) {
+            state.globalError = error.message;
+            state.deleteTargetId = null;
+            render();
+        }
     });
 
     modal.addEventListener("click", (event) => {
@@ -663,6 +1165,24 @@ function bindModalKeyboardEscape() {
     if (escapeHandlerBound) {
         return;
     }
+
+    document.addEventListener("click", (event) => {
+        const deleteBtn = event.target.closest("[data-delete-id]");
+        if (deleteBtn) {
+            lastFocusedElement = document.activeElement;
+            state.deleteTargetId = Number(deleteBtn.dataset.deleteId);
+            render();
+            return;
+        }
+
+        const editBtn = event.target.closest("[data-edit-id]");
+        if (editBtn) {
+            lastFocusedElement = document.activeElement;
+            state.editingAssetId = Number(editBtn.dataset.editId);
+            state.addModalOpen = true;
+            render();
+        }
+    });
 
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
@@ -703,4 +1223,4 @@ function restoreFocus() {
     }
 }
 
-render();
+loadInitialData();
