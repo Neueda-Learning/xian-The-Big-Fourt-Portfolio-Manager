@@ -17,6 +17,7 @@
     <button class="tab" data-tab="holding">Holding</button>
     <button class="tab" data-tab="transaction">Transaction</button>
     <button class="tab" data-tab="price">Price History</button>
+    <button class="tab" data-tab="ai">AI Assistant</button>
 </nav>
 
 <main>
@@ -209,12 +210,6 @@
         <h2>Price History</h2>
         <div class="grid-2">
             <article class="card">
-                <h3>Yahoo</h3>
-                <button id="yahoo-sync-all-btn">Load All Yahoo Data</button>
-                <pre id="yahoo-sync-all-result" class="result"></pre>
-            </article>
-
-            <article class="card">
                 <h3>Create Price Record</h3>
                 <form id="price-create-form">
                     <label>Ticker <input type="text" id="price-ticker" required></label>
@@ -257,6 +252,37 @@
         <article class="card">
             <h3>Price History List</h3>
             <div id="price-list" class="table-wrap"></div>
+        </article>
+    </section>
+
+    <section class="panel" id="panel-ai">
+        <h2>AI Assistant</h2>
+        <article class="card">
+            <div class="ai-provider-box">
+                <span class="ai-provider-label">Provider</span>
+                <strong id="ai-provider-name">Zhipu BigModel</strong>
+            </div>
+            <!-- 固定免责声明：明确 AI 回答仅用于教育和信息参考 -->
+            <p class="ai-disclaimer">AI responses are provided for educational and informational purposes only and do not constitute financial or investment advice.</p>
+            <!-- 对话展示区域：用户消息在右侧，AI 消息在左侧 -->
+            <div id="ai-chat-messages" class="ai-chat-messages" aria-live="polite"></div>
+            <!-- 加载与错误提示由 app.js 控制显示/隐藏 -->
+            <p id="ai-loading" class="ai-loading" hidden>AI is thinking...</p>
+            <p id="ai-error" class="ai-error" hidden></p>
+            <form id="ai-chat-form">
+                <label for="ai-model">AI Model</label>
+                <select id="ai-model" aria-describedby="ai-model-help">
+                    <option value="">Loading models...</option>
+                </select>
+                <p id="ai-model-help" class="ai-model-help">Provider: Zhipu BigModel</p>
+                <label for="ai-message">Ask a question</label>
+                <textarea id="ai-message" maxlength="2000" rows="4" placeholder="Example: What is portfolio diversification?"></textarea>
+                <!-- Send 发送问题；Clear 清空当前对话 -->
+                <div class="ai-actions">
+                    <button type="submit" id="ai-send-btn">Send</button>
+                    <button type="button" id="ai-clear-btn">Clear Conversation</button>
+                </div>
+            </form>
         </article>
     </section>
 </main>

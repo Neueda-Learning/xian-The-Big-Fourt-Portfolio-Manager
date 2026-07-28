@@ -17,9 +17,24 @@
             body = await response.text();
         }
         if (!response.ok) {
-            throw new Error(typeof body === "string" ? body : JSON.stringify(body));
+            throw new Error(safeErrorMessage(body, `Request failed with status ${response.status}`));
         }
         return body;
+    }
+
+    function safeErrorMessage(payload, fallback) {
+        if (payload && typeof payload === "object") {
+            if (typeof payload.message === "string" && payload.message.trim()) {
+                return payload.message.trim();
+            }
+            if (typeof payload.error === "string" && payload.error.trim()) {
+                return payload.error.trim();
+            }
+        }
+        if (typeof payload === "string" && payload.trim()) {
+            return payload.trim();
+        }
+        return fallback;
     }
 
     function renderTable(containerId, items) {
@@ -274,20 +289,230 @@
         });
     }
 
-    function bindYahooSync() {
-        document.getElementById("yahoo-sync-all-btn").addEventListener("click", async () => {
-            const data = await api("/yahoo/sync/all", { method: "POST" });
-            document.getElementById("yahoo-sync-all-result").textContent = JSON.stringify(data, null, 2);
-            const savedRows = await api("/prices/all");
-            renderTable("price-list", savedRows);
-            showToast(`Yahoo sync saved ${data.savedCount}/${data.tickerCount}`);
-        });
-    }
-
     function bindGlobalErrorHandler() {
         window.addEventListener("unhandledrejection", (event) => {
             showToast(event.reason?.message || "Request failed");
         });
+    }
+
+    function bindAiAssistant() {
+        // 获取 AI 面板中会用到的 DOM 元素，后续事件都围绕这些元素展开。
+        const form = document.getElementById("ai-chat-form");
+        const modelSelect = document.getElementById("ai-model");
+        const messageInput = document.getElementById("ai-message");
+        const sendButton = document.getElementById("ai-send-btn");
+        const clearButton = document.getElementById("ai-clear-btn");
+        const messages = document.getElementById("ai-chat-messages");
+        const loadingEl = document.getElementById("ai-loading");
+        const errorEl = document.getElementById("ai-error");
+        const providerNameEl = document.getElementById("ai-provider-name");
+
+        function appendChatMessage(type, text, metaText) {
+            const bubble = document.createElement("div");
+            bubble.classList.add("ai-message", type === "user" ? "user" : "assistant");
+            if (metaText) {
+                const meta = document.createElement("span");
+                meta.classList.add("ai-message-meta");
+                // 消息头部显示“角色 + 所选模型”，帮助用户确认当前回答来自哪个智谱模型。
+                meta.textContent = metaText;
+                bubble.appendChild(meta);
+            }
+            const content = document.createElement("span");
+            // 使用 textContent 可以避免把 AI 文本当成 HTML 执行，降低 XSS 风险。
+            content.textContent = text;
+            bubble.appendChild(content);
+            messages.appendChild(bubble);
+            // 自动滚动到最新一条消息。
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function setLoading(loading) {
+            sendButton.disabled = loading || !hasValidModel();
+            messageInput.disabled = loading;
+            modelSelect.disabled = loading || !modelSelect.options.length;
+            loadingEl.hidden = !loading;
+        }
+
+        function hasValidModel() {
+            return Boolean(modelSelect.value && modelSelect.value.trim());
+        }
+
+        function showAiError(message) {
+            errorEl.textContent = message;
+            errorEl.hidden = false;
+        }
+
+        function clearAiError() {
+            errorEl.textContent = "";
+            errorEl.hidden = true;
+        }
+
+        function updateSendButtonAvailability() {
+            sendButton.disabled = !hasValidModel();
+        }
+
+        // 前端启动时先从后端 GET /api/ai/models 读取模型列表。
+        // 这样可保证“允许选择哪些智谱模型”由后端配置统一控制，而不是写死在 JS 中。
+        async function loadAiModels() {
+            clearAiError();
+            modelSelect.disabled = true;
+            sendButton.disabled = true;
+            while (modelSelect.firstChild) {
+                modelSelect.removeChild(modelSelect.firstChild);
+            }
+
+            try {
+                const response = await fetch("/api/ai/models");
+                const contentType = response.headers.get("content-type") || "";
+                let payload = null;
+
+                if (contentType.includes("application/json")) {
+                    payload = await response.json();
+                } else {
+                    payload = await response.text();
+                }
+
+                if (!response.ok) {
+                    throw new Error(safeErrorMessage(payload, "无法加载 AI 模型列表。"));
+                }
+
+                const models = Array.isArray(payload?.models) ? payload.models : [];
+                const provider = typeof payload?.provider === "string" ? payload.provider.trim() : "zhipu";
+                const defaultModel = typeof payload?.defaultModel === "string" ? payload.defaultModel.trim() : "";
+
+                providerNameEl.textContent = provider === "zhipu" ? "Zhipu BigModel" : provider || "Zhipu BigModel";
+
+                if (models.length === 0) {
+                    const option = document.createElement("option");
+                    option.value = "";
+                    option.textContent = "No available models";
+                    modelSelect.appendChild(option);
+                    showAiError("当前没有可用的智谱模型，请联系管理员检查后端配置。");
+                    updateSendButtonAvailability();
+                    return;
+                }
+
+                models.forEach((modelName) => {
+                    const option = document.createElement("option");
+                    option.value = modelName;
+                    option.textContent = modelName;
+                    modelSelect.appendChild(option);
+                });
+
+                // 默认选中项以后端返回的 defaultModel 为准；若后端已回退到第一个可用模型，这里直接沿用。
+                if (defaultModel && models.includes(defaultModel)) {
+                    modelSelect.value = defaultModel;
+                } else {
+                    modelSelect.value = models[0];
+                }
+
+                modelSelect.disabled = false;
+                updateSendButtonAvailability();
+            } catch (error) {
+                const option = document.createElement("option");
+                option.value = "";
+                option.textContent = "Failed to load models";
+                modelSelect.appendChild(option);
+                showAiError(error?.message || "无法加载 AI 模型列表，请稍后重试。");
+                updateSendButtonAvailability();
+            }
+        }
+
+        async function sendAiMessage() {
+            clearAiError();
+            const model = modelSelect.value ? modelSelect.value.trim() : "";
+            // 读取输入框内容，trim() 去掉首尾空白，避免提交空格消息。
+            const rawMessage = messageInput.value || "";
+            const userMessage = rawMessage.trim();
+
+            if (!model) {
+                showAiError("请先选择一个智谱模型。");
+                return;
+            }
+
+            if (!userMessage) {
+                showAiError("请输入问题后再发送。");
+                return;
+            }
+            if (userMessage.length > 2000) {
+                showAiError("问题长度不能超过 2000 个字符。");
+                return;
+            }
+
+            appendChatMessage("user", userMessage, `用户 · ${model}`);
+            setLoading(true);
+
+            try {
+                // fetch 会向后端发送 HTTP 请求；这里使用相对路径，表示同域调用 Spring Boot 后端。
+                const response = await fetch("/api/ai/chat", {
+                    // method: POST 表示向服务器提交数据。
+                    method: "POST",
+                    // Content-Type: application/json 表示请求体是 JSON。
+                    headers: { "Content-Type": "application/json" },
+                    // JSON.stringify 把“所选模型 + 用户问题”一起发送给后端；浏览器不会接触 API Key。
+                    body: JSON.stringify({ model: model, message: userMessage })
+                });
+
+                const contentType = response.headers.get("content-type") || "";
+                let payload = null;
+
+                if (contentType.includes("application/json")) {
+                    // response.json() 把响应体解析成 JS 对象。
+                    payload = await response.json();
+                } else {
+                    const text = await response.text();
+                    payload = text;
+                }
+
+                if (!response.ok) {
+                    throw new Error(safeErrorMessage(payload, "AI 请求失败，请稍后重试。"));
+                }
+
+                // data.answer 来自后端 AiChatResponse 的 answer 字段。
+                const answer = typeof payload?.answer === "string" ? payload.answer.trim() : "";
+                if (!answer) {
+                    throw new Error("AI 暂时没有返回有效回答。");
+                }
+
+                const responseModel = typeof payload?.model === "string" && payload.model.trim() ? payload.model.trim() : model;
+                // 将 AI 回答显示在左侧消息区域，并标明回答使用的智谱模型。
+                appendChatMessage("assistant", answer, `智谱 AI · ${responseModel}`);
+                messageInput.value = "";
+            } catch (error) {
+                // 捕获网络中断、超时或后端错误，避免未处理异常影响整页功能。
+                showAiError(error?.message || "暂时无法连接 AI 服务，请稍后重试。");
+            } finally {
+                // 请求结束后恢复按钮和输入框，关闭 loading 状态。
+                setLoading(false);
+                messageInput.focus();
+            }
+        }
+
+        modelSelect.addEventListener("change", () => {
+            clearAiError();
+            updateSendButtonAvailability();
+        });
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            await sendAiMessage();
+        });
+
+        messageInput.addEventListener("keydown", async (event) => {
+            // 回车发送，Shift + Enter 换行，符合常见聊天输入习惯。
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                await sendAiMessage();
+            }
+        });
+
+        clearButton.addEventListener("click", () => {
+            messages.textContent = "";
+            clearAiError();
+            messageInput.focus();
+        });
+
+        loadAiModels();
     }
 
     bindTabs();
@@ -295,7 +520,7 @@
     bindHolding();
     bindTransaction();
     bindPrice();
-    bindYahooSync();
+    bindAiAssistant();
     bindGlobalErrorHandler();
     loadPortfolios();
 })();
