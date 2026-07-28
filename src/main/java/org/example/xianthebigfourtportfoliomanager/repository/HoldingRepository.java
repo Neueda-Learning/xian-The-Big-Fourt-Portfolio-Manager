@@ -107,8 +107,8 @@ public class HoldingRepository {
 
     public boolean existsById(int id) {
         String sql = "select count(*) from holding where id = ?";
-        int count = jdbcTemplate.queryForObject(sql, Integer.class, id);
-        return  count > 0;
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, id);
+        return count != null && count.intValue() > 0;
     }
 }
 
