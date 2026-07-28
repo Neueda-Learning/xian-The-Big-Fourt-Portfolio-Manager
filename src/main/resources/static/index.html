@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+    <h1>Big Fourt Portfolio Manager</h1>
+    <p>Simple full-stack dashboard for portfolios, holdings, current price, and transactions.</p>
+</header>
+
+<nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="portfolio">Portfolio</button>
+    <button class="tab" data-tab="holding">Holding</button>
+    <button class="tab" data-tab="transaction">Transaction</button>
+</nav>
+
+<main>
+    <section class="panel active" id="panel-portfolio">
+        <h2>Portfolio</h2>
+        <div class="grid-2">
+            <article class="card">
+                <h3>Create Portfolio</h3>
+                <form id="portfolio-create-form">
+                    <label>Name <input type="text" id="portfolio-name" required></label>
+                    <label>Description <input type="text" id="portfolio-description" required></label>
+                    <button type="submit">Save</button>
+                </form>
+            </article>
+
+            <article class="card">
+                <h3>Find Portfolio By ID</h3>
+                <form id="portfolio-find-form">
+                    <label>ID <input type="number" id="portfolio-find-id" min="1" required></label>
+                    <button type="submit">Find</button>
+                </form>
+                <pre id="portfolio-find-result" class="result"></pre>
+            </article>
+
+            <article class="card">
+                <h3>Update Portfolio</h3>
+                <form id="portfolio-update-form">
+                    <label>ID <input type="number" id="portfolio-update-id" min="1" required></label>
+                    <label>Name <input type="text" id="portfolio-update-name" required></label>
+                    <label>Description <input type="text" id="portfolio-update-description" required></label>
+                    <button type="submit">Update</button>
+                </form>
+            </article>
+
+            <article class="card">
+                <h3>Delete Portfolio</h3>
+                <form id="portfolio-delete-form">
+                    <label>ID <input type="number" id="portfolio-delete-id" min="1" required></label>
+                    <button type="submit" class="danger">Delete</button>
+                </form>
+            </article>
+        </div>
+
+        <article class="card">
+            <div class="card-header">
+                <h3>All Portfolios</h3>
+                <button id="portfolio-refresh">Refresh</button>
+            </div>
+            <div id="portfolio-list" class="table-wrap"></div>
+        </article>
+    </section>
+
+    <section class="panel" id="panel-holding">
+        <h2>Holding</h2>
+        <div class="grid-2">
+            <article class="card">
+                <h3>Create Holding</h3>
+                <form id="holding-create-form">
+                    <label>Portfolio ID <input type="number" id="holding-portfolio-id" min="1" required></label>
+                    <label>Asset Type
+                        <select id="holding-asset-type" required>
+                            <option value="STOCK">STOCK</option>
+                            <option value="BOND">BOND</option>
+                            <option value="CASH">CASH</option>
+                        </select>
+                    </label>
+                    <label>Ticker <input type="text" id="holding-ticker" required></label>
+                    <label>Quantity <input type="number" id="holding-quantity" step="0.0001" required></label>
+                    <label>Current Price <input type="number" id="holding-purchase-price" step="0.0001" required></label>
+                    <label>Purchase Date <input type="date" id="holding-purchase-date" required></label>
+                    <label>Currency <input type="text" id="holding-currency" value="USD" required></label>
+                    <button type="submit">Save</button>
+                </form>
+            </article>
+
+            <article class="card">
+                <h3>Find Holding By ID</h3>
+                <form id="holding-find-form">
+                    <label>ID <input type="number" id="holding-find-id" min="1" required></label>
+                    <button type="submit">Find</button>
+                </form>
+                <pre id="holding-find-result" class="result"></pre>
+            </article>
+
+            <article class="card">
+                <h3>List Holdings By Portfolio ID</h3>
+                <form id="holding-by-portfolio-form">
+                    <label>Portfolio ID <input type="number" id="holding-list-portfolio-id" min="1" required></label>
+                    <button type="submit">Load</button>
+                </form>
+            </article>
+
+            <article class="card">
+                <h3>Delete Holding</h3>
+                <form id="holding-delete-form">
+                    <label>ID <input type="number" id="holding-delete-id" min="1" required></label>
+                    <button type="submit" class="danger">Delete</button>
+                </form>
+            </article>
+        </div>
+
+        <article class="card">
+            <h3>Update Holding</h3>
+            <form id="holding-update-form" class="grid-form">
+                <label>ID <input type="number" id="holding-update-id" min="1" required></label>
+                <label>Portfolio ID <input type="number" id="holding-update-portfolio-id" min="1" required></label>
+                <label>Asset Type
+                    <select id="holding-update-asset-type" required>
+                        <option value="STOCK">STOCK</option>
+                        <option value="BOND">BOND</option>
+                        <option value="CASH">CASH</option>
+                    </select>
+                </label>
+                <label>Ticker <input type="text" id="holding-update-ticker" required></label>
+                <label>Quantity <input type="number" id="holding-update-quantity" step="0.0001" required></label>
+                <label>Current Price <input type="number" id="holding-update-purchase-price" step="0.0001" required></label>
+                <label>Purchase Date <input type="date" id="holding-update-purchase-date" required></label>
+                <label>Currency <input type="text" id="holding-update-currency" required></label>
+                <button type="submit">Update</button>
+            </form>
+        </article>
+
+        <article class="card">
+            <h3>Holding List</h3>
+            <div id="holding-list" class="table-wrap"></div>
+        </article>
+    </section>
+
+    <section class="panel" id="panel-transaction">
+        <h2>Transaction</h2>
+        <div class="grid-2">
+            <article class="card">
+                <h3>Create Transaction</h3>
+                <form id="transaction-create-form">
+                    <label>Holding ID <input type="number" id="transaction-holding-id" min="1" required></label>
+                    <label>Type <input type="text" id="transaction-type" placeholder="BUY/SELL" required></label>
+                    <label>Quantity <input type="number" id="transaction-quantity" step="0.0001" required></label>
+                    <label>Price After Transaction <input type="number" id="transaction-price" step="0.0001" required></label>
+                    <label>Trade DateTime <input type="datetime-local" id="transaction-trade-date" required></label>
+                    <button type="submit">Save</button>
+                </form>
+            </article>
+
+            <article class="card">
+                <h3>Find Transaction By ID</h3>
+                <form id="transaction-find-form">
+                    <label>ID <input type="number" id="transaction-find-id" min="1" required></label>
+                    <button type="submit">Find</button>
+                </form>
+                <pre id="transaction-find-result" class="result"></pre>
+            </article>
+
+            <article class="card">
+                <h3>List Transactions By Holding ID</h3>
+                <form id="transaction-by-holding-form">
+                    <label>Holding ID <input type="number" id="transaction-list-holding-id" min="1" required></label>
+                    <button type="submit">Load</button>
+                </form>
+            </article>
+
+            <article class="card">
+                <h3>Delete Transaction</h3>
+                <form id="transaction-delete-form">
+                    <label>ID <input type="number" id="transaction-delete-id" min="1" required></label>
+                    <button type="submit" class="danger">Delete</button>
+                </form>
+            </article>
+        </div>
+
+        <article class="card">
+            <h3>Update Transaction</h3>
+            <form id="transaction-update-form" class="grid-form">
+                <label>ID <input type="number" id="transaction-update-id" min="1" required></label>
+                <label>Holding ID <input type="number" id="transaction-update-holding-id" min="1" required></label>
+                <label>Type <input type="text" id="transaction-update-type" required></label>
+                <label>Quantity <input type="number" id="transaction-update-quantity" step="0.0001" required></label>
+                <label>Price After Transaction <input type="number" id="transaction-update-price" step="0.0001" required></label>
+                <label>Trade DateTime <input type="datetime-local" id="transaction-update-trade-date" required></label>
+                <button type="submit">Update</button>
+            </form>
+        </article>
+
+        <article class="card">
+            <h3>Transaction List</h3>
+            <div id="transaction-list" class="table-wrap"></div>
+        </article>
+    </section>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

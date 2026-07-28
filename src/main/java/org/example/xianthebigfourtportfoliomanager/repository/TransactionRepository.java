@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
+import java.math.BigDecimal;
 import java.util.List;
 
 @Repository
@@ -61,6 +62,9 @@ public class TransactionRepository {
             return null;
         }
 
+        // A transaction's price is treated as the holding's latest current price.
+        syncHoldingCurrentPrice(transaction.getHoldingId(), transaction.getPrice());
+
         Integer id = jdbcTemplate.queryForObject("select LAST_INSERT_ID()", Integer.class);
         if (id == null) {
             return transaction;
@@ -69,6 +73,7 @@ public class TransactionRepository {
     }
 
     public Transaction update(Transaction transaction) {
+        Transaction existing = getTransactionById(transaction.getId());
         String sql = "update `transaction` set holding_id = ?, type = ?, quantity = ?, price = ?, trade_date = ? where id = ?";
         jdbcTemplate.update(
                 sql,
@@ -79,12 +84,36 @@ public class TransactionRepository {
                 transaction.getTradeDate(),
                 transaction.getId()
         );
+
+        recalculateHoldingCurrentPrice(transaction.getHoldingId());
+        if (existing != null && existing.getHoldingId() != transaction.getHoldingId()) {
+            recalculateHoldingCurrentPrice(existing.getHoldingId());
+        }
+
         return getTransactionById(transaction.getId());
     }
 
     public int deleteById(int id) {
+        Transaction existing = getTransactionById(id);
         String sql = "delete from `transaction` where id = ?";
-        return jdbcTemplate.update(sql, id);
+        int rows = jdbcTemplate.update(sql, id);
+        if (rows == 1 && existing != null) {
+            recalculateHoldingCurrentPrice(existing.getHoldingId());
+        }
+        return rows;
+    }
+
+    private void syncHoldingCurrentPrice(int holdingId, BigDecimal price) {
+        String sql = "update holding set purchase_price = ?, updated_at = CURRENT_TIMESTAMP where id = ?";
+        jdbcTemplate.update(sql, price, holdingId);
+    }
+
+    private void recalculateHoldingCurrentPrice(int holdingId) {
+        String sql = "select price from `transaction` where holding_id = ? order by trade_date desc, id desc limit 1";
+        List<BigDecimal> prices = jdbcTemplate.query(sql, (rs, rowNum) -> rs.getBigDecimal("price"), holdingId);
+        if (!prices.isEmpty()) {
+            syncHoldingCurrentPrice(holdingId, prices.get(0));
+        }
     }
 }
 
