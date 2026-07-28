@@ -5,13 +5,16 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public class priceHistory {
-    private int id;
+    private Integer id;
     private String ticker;
     private LocalDate priceDate;
     private BigDecimal closeprice;
     private LocalDateTime createat;
 
-    public priceHistory(int id, String ticker, LocalDate priceDate, BigDecimal closeprice, LocalDateTime createat) {
+    public priceHistory() {
+    }
+
+    public priceHistory(Integer id, String ticker, LocalDate priceDate, BigDecimal closeprice, LocalDateTime createat) {
         this.id = id;
         this.ticker = ticker;
         this.priceDate = priceDate;
@@ -19,7 +22,7 @@ public class priceHistory {
         this.createat = createat;
     }
 
-    public int getId() {
+    public Integer getId() {
         return id;
     }
 
@@ -39,7 +42,7 @@ public class priceHistory {
         return createat;
     }
 
-    public void setId(int id) {
+    public void setId(Integer id) {
         this.id = id;
     }
 

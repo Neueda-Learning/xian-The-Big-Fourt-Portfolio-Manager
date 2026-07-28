@@ -75,7 +75,7 @@ public class PortfolioRepository {
     public boolean existsById(int id) {
         String sql = "select count(*) from portfolio where id = ?";
         Integer count = jdbcTemplate.queryForObject(sql, Integer.class, id);
-        return count != null && count > 0;
+        return count != null && count.intValue() > 0;
     }
 }
 
