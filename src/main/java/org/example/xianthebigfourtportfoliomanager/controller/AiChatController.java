@@ -1,5 +1,4 @@
 package org.example.xianthebigfourtportfoliomanager.controller;
-
 import jakarta.validation.Valid;
 import org.example.xianthebigfourtportfoliomanager.dto.AiChatRequest;
 import org.example.xianthebigfourtportfoliomanager.dto.AiChatResponse;
@@ -11,33 +10,26 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-// @RestController 表示该类提供 REST 接口，返回值会自动转成 JSON。
+// @RestController marks this class as a REST controller; return values are automatically serialised to JSON.
 @RestController
-// @RequestMapping 统一定义当前控制器的基础路径。
+// @RequestMapping sets the base path for all endpoints in this controller.
 @RequestMapping("/api/ai")
 public class AiChatController {
-
     private final AiChatService aiChatService;
-
     public AiChatController(AiChatService aiChatService) {
         this.aiChatService = aiChatService;
     }
-
-    // GET /api/ai/models 只返回可公开的智谱模型选项，供前端下拉框加载。
-    // 这里不会返回 API Key，也不会让浏览器直接访问智谱接口。
+    // GET /api/ai/models returns only safe, publicly shareable Zhipu model options for the frontend dropdown.
+    // No API key is returned here; the browser never calls the Zhipu API directly.
     @GetMapping("/models")
     public ResponseEntity<AiModelOptionsResponse> models() {
         return ResponseEntity.ok(aiChatService.getModelOptions());
     }
-
-    // @PostMapping 表示处理 POST 请求；
-    // @RequestBody 把请求 JSON 绑定到 Java 对象；
-    // @Valid 触发参数校验。
-    // POST /api/ai/chat 接收前端提交的“所选模型 + 用户问题”，真正调用智谱的逻辑仍放在 Service 中。
+    // POST /api/ai/chat receives the selected model and the user question from the frontend.
+    // @RequestBody binds the JSON body to a Java object; @Valid triggers constraint validation.
+    // The actual call to Zhipu is delegated entirely to the Service layer.
     @PostMapping("/chat")
     public ResponseEntity<AiChatResponse> chat(@Valid @RequestBody AiChatRequest request) {
         return ResponseEntity.ok(aiChatService.chat(request.getModel(), request.getMessage()));
     }
 }
-

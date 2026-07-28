@@ -262,11 +262,11 @@
                 <span class="ai-provider-label">Provider</span>
                 <strong id="ai-provider-name">Zhipu BigModel</strong>
             </div>
-            <!-- 固定免责声明：明确 AI 回答仅用于教育和信息参考 -->
+            <!-- Fixed disclaimer: AI responses are for educational and informational purposes only -->
             <p class="ai-disclaimer">AI responses are provided for educational and informational purposes only and do not constitute financial or investment advice.</p>
-            <!-- 对话展示区域：用户消息在右侧，AI 消息在左侧 -->
+            <!-- Chat display area: user messages on the right, AI responses on the left -->
             <div id="ai-chat-messages" class="ai-chat-messages" aria-live="polite"></div>
-            <!-- 加载与错误提示由 app.js 控制显示/隐藏 -->
+            <!-- Loading and error indicators are shown/hidden by app.js -->
             <p id="ai-loading" class="ai-loading" hidden>AI is thinking...</p>
             <p id="ai-error" class="ai-error" hidden></p>
             <form id="ai-chat-form">
@@ -277,7 +277,7 @@
                 <p id="ai-model-help" class="ai-model-help">Provider: Zhipu BigModel</p>
                 <label for="ai-message">Ask a question</label>
                 <textarea id="ai-message" maxlength="2000" rows="4" placeholder="Example: What is portfolio diversification?"></textarea>
-                <!-- Send 发送问题；Clear 清空当前对话 -->
+                <!-- Send submits the question; Clear wipes the current conversation -->
                 <div class="ai-actions">
                     <button type="submit" id="ai-send-btn">Send</button>
                     <button type="button" id="ai-clear-btn">Clear Conversation</button>

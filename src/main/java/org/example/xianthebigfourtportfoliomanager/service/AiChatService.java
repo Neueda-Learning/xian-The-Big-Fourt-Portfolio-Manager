@@ -1,5 +1,4 @@
 package org.example.xianthebigfourtportfoliomanager.service;
-
 import org.example.xianthebigfourtportfoliomanager.config.AiProperties;
 import org.example.xianthebigfourtportfoliomanager.dto.AiChatResponse;
 import org.example.xianthebigfourtportfoliomanager.dto.AiModelOptionsResponse;
@@ -18,7 +17,6 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
-
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -27,94 +25,77 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
-
 /**
- * AI 问答核心服务。
- * 作用：接收前端问题 -> 调用外部 AI 接口 -> 提取文本回答 -> 返回给前端。
+ * Core AI Q&A service.
+ * Receives a question from the frontend -> calls the external AI API -> extracts the text answer -> returns it to the frontend.
  */
 @Service
 public class AiChatService {
-
     private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
-
-    // 系统提示词用于限制模型行为：只允许知识问答，不允许执行业务操作。
-    private static final String SYSTEM_PROMPT = "你是投资组合管理系统中的金融知识问答助手。你只能提供教育性和信息性的文字回答，不构成投资建议。你不能替用户执行交易，不能修改投资组合、持仓或数据库，也不能声称已经完成任何操作。";
-
-    private static final String DISCLAIMER = "AI回答仅用于教育和信息参考，不构成任何投资建议。";
-
+    // System prompt restricts model behaviour: knowledge Q&A only; no business operations are permitted.
+    private static final String SYSTEM_PROMPT = "You are a financial knowledge Q&A assistant in a portfolio management system. You may only provide educational and informational text responses, which do not constitute investment advice. You must not execute trades on behalf of users, modify portfolios, holdings, or databases, or claim to have completed any operations.";
+    private static final String DISCLAIMER = "AI responses are for educational and informational purposes only and do not constitute investment advice.";
     private final RestTemplate aiRestTemplate;
     private final AiProperties aiProperties;
-
     public AiChatService(@Qualifier("aiRestTemplate") RestTemplate aiRestTemplate, AiProperties aiProperties) {
         this.aiRestTemplate = aiRestTemplate;
         this.aiProperties = aiProperties;
     }
-
     /**
-     * 对外统一入口：Controller 只调用这个方法，不直接访问外部 AI。
+     * Unified public entry point: the Controller calls only this method and never accesses the external AI directly.
      */
     public AiChatResponse chat(String model, String message) {
         if (!aiProperties.isEnabled()) {
-            return new AiChatResponse("AI功能未开启，请联系管理员。", normalizedProvider(), resolveDefaultModel());
+            return new AiChatResponse("AI feature is not enabled. Please contact the administrator.", normalizedProvider(), resolveDefaultModel());
         }
-
         String configError = validateConfiguration();
         if (configError != null) {
             return new AiChatResponse(configError, normalizedProvider(), resolveDefaultModel());
         }
-
-        // 前端提交的 model 不能直接信任；后端必须做 trim 和白名单校验，防止用户绕过页面自行构造请求。
+        // The model submitted by the frontend cannot be trusted directly; trim and validate against the allow-list.
         String selectedModel = sanitizeModel(model);
         if (selectedModel == null) {
-            return new AiChatResponse("请选择有效的智谱模型。", normalizedProvider(), resolveDefaultModel());
+            return new AiChatResponse("Please select a valid Zhipu model.", normalizedProvider(), resolveDefaultModel());
         }
-        // 同一个智谱 API Key 可以访问账号中已开通的多个模型，但后端仍要限制为配置中允许的列表。
+        // A single Zhipu API key can access multiple enabled models, but the backend restricts to the configured allow-list.
         if (!getAllowedModels().contains(selectedModel)) {
-            return new AiChatResponse("不支持该智谱模型：" + selectedModel, normalizedProvider(), resolveDefaultModel());
+            return new AiChatResponse("Unsupported Zhipu model: " + selectedModel, normalizedProvider(), resolveDefaultModel());
         }
-
-        // 再次在服务层兜底，避免前端绕过校验直接请求后端。
+        // Second-layer guard in the service to catch any requests that bypass frontend validation.
         String sanitizedMessage = sanitizeMessage(message);
         if (sanitizedMessage == null) {
-            return new AiChatResponse("问题不能为空且不能超过2000个字符。", normalizedProvider(), selectedModel);
+            return new AiChatResponse("Question must not be empty and must not exceed 2000 characters.", normalizedProvider(), selectedModel);
         }
-
         String endpoint = buildEndpoint(aiProperties.getBaseUrl(), aiProperties.getChatPath());
-
-        // 使用 Map 直接组装 OpenAI 兼容请求体，减少额外 DTO 文件。
-        // 这里会把前端选中的模型原样放入请求体 model 字段，从而切换不同的智谱大模型。
+        // Build an OpenAI-compatible request body using a Map to avoid extra DTO files.
+        // The model selected by the frontend is placed directly into the "model" field to switch Zhipu models.
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", selectedModel);
         requestBody.put("temperature", aiProperties.getTemperature());
         requestBody.put("max_tokens", aiProperties.getMaxTokens());
         requestBody.put("stream", false);
-
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", SYSTEM_PROMPT),
                 Map.of("role", "user", "content", sanitizedMessage)
         );
         requestBody.put("messages", messages);
-
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        // Bearer Token 来自环境变量，不写死在代码中。
+        // Bearer token is read from an environment variable and never hard-coded.
         headers.setBearerAuth(aiProperties.getApiKey().trim());
-
         try {
-            // 通过 RestTemplate 调用外部 AI Chat Completions 接口。
+            // Call the external AI Chat Completions endpoint via RestTemplate.
             ResponseEntity<Map> response = aiRestTemplate.exchange(
                     endpoint,
                     HttpMethod.POST,
                     new HttpEntity<>(requestBody, headers),
                     Map.class
             );
-
-            // 智谱返回 OpenAI 兼容结构，这里只解析 choices[0].message.content 作为最终答案。
+            // Zhipu returns an OpenAI-compatible structure; only choices[0].message.content is needed.
             String answer = extractContent(response.getBody());
             if (!StringUtils.hasText(answer)) {
-                return new AiChatResponse("AI暂时没有返回有效回答", normalizedProvider(), selectedModel);
+                return new AiChatResponse("AI did not return a valid response.", normalizedProvider(), selectedModel);
             }
-
             return new AiChatResponse(
                     appendDisclaimer(answer.trim()),
                     normalizedProvider(),
@@ -123,53 +104,50 @@ public class AiChatService {
         } catch (HttpStatusCodeException ex) {
             HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
             if (status == HttpStatus.TOO_MANY_REQUESTS) {
-                return new AiChatResponse("AI服务请求过于频繁，请稍后再试", normalizedProvider(), selectedModel);
+                return new AiChatResponse("Too many requests to AI service. Please try again later.", normalizedProvider(), selectedModel);
             }
             if (status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN) {
-                return new AiChatResponse("AI认证失败，请检查API配置", normalizedProvider(), selectedModel);
+                return new AiChatResponse("AI authentication failed. Please check the API configuration.", normalizedProvider(), selectedModel);
             }
             if (status != null && status.is5xxServerError()) {
-                return new AiChatResponse("AI服务暂时不可用，请稍后重试", normalizedProvider(), selectedModel);
+                return new AiChatResponse("AI service is temporarily unavailable. Please try again later.", normalizedProvider(), selectedModel);
             }
-            return new AiChatResponse("AI服务请求失败，请稍后重试", normalizedProvider(), selectedModel);
+            return new AiChatResponse("AI service request failed. Please try again later.", normalizedProvider(), selectedModel);
         } catch (ResourceAccessException ex) {
-            // 超时一般会落在 ResourceAccessException 中，这里给前端返回友好文本而不是底层异常。
+            // Timeouts typically surface as a ResourceAccessException; return a friendly message instead of the raw exception.
             if (isTimeout(ex)) {
-                return new AiChatResponse("AI服务请求超时，请稍后重试", normalizedProvider(), selectedModel);
+                return new AiChatResponse("AI service request timed out. Please try again later.", normalizedProvider(), selectedModel);
             }
             log.warn("AI network access failed for provider={}", normalizedProvider());
-            return new AiChatResponse("AI服务暂时不可用，请稍后重试", normalizedProvider(), selectedModel);
+            return new AiChatResponse("AI service is temporarily unavailable. Please try again later.", normalizedProvider(), selectedModel);
         } catch (RestClientException ex) {
             log.warn("AI client error for provider={}", normalizedProvider());
-            return new AiChatResponse("AI服务暂时不可用，请稍后重试", normalizedProvider(), selectedModel);
+            return new AiChatResponse("AI service is temporarily unavailable. Please try again later.", normalizedProvider(), selectedModel);
         }
     }
-
-    // GET /api/ai/models 会调用这里，把后端配置中的安全模型选项返回给前端。
+    // Called by GET /api/ai/models to return the safe set of model options to the frontend.
     public AiModelOptionsResponse getModelOptions() {
         List<String> models = getAllowedModels();
         return new AiModelOptionsResponse(normalizedProvider(), models, resolveDefaultModel());
     }
-
-    // 配置项来自 application.properties + 环境变量；当前实现只允许 provider 固定为 zhipu。
+    // Configuration comes from application.properties + environment variables; the provider is fixed as "zhipu".
     private String validateConfiguration() {
         String provider = normalizedProvider();
         if (!"zhipu".equals(provider)) {
-            return "AI provider 配置无效，当前仅支持 zhipu";
+            return "Invalid AI provider configuration. Only 'zhipu' is supported.";
         }
         if (!StringUtils.hasText(aiProperties.getBaseUrl())) {
-            return "AI base URL 未配置";
+            return "AI base URL is not configured.";
         }
         if (!StringUtils.hasText(aiProperties.getApiKey())) {
-            return "AI API key 未配置";
+            return "AI API key is not configured.";
         }
         if (getAllowedModels().isEmpty()) {
-            return "AI models 未配置";
+            return "AI models are not configured.";
         }
         return null;
     }
-
-    // 把配置中的模型列表做 trim、去空值、去重，作为后端允许列表。
+    // Trims, removes blanks, and de-duplicates the configured model list to produce the backend allow-list.
     private List<String> getAllowedModels() {
         List<String> models = aiProperties.getModels();
         if (models == null || models.isEmpty()) {
@@ -182,21 +160,18 @@ public class AiChatService {
                 .collect(Collectors.toCollection(ArrayList::new));
         return Collections.unmodifiableList(normalizedModels);
     }
-
     private String sanitizeModel(String model) {
         if (!StringUtils.hasText(model)) {
             return null;
         }
         return model.trim();
     }
-
     private String sanitizeMessage(String message) {
         if (message == null) return null;
         String trimmed = message.trim();
         if (trimmed.isEmpty() || trimmed.length() > 2000) return null;
         return trimmed;
     }
-
     private String normalizedProvider() {
         String provider = aiProperties.getProvider();
         if (provider == null) {
@@ -204,24 +179,20 @@ public class AiChatService {
         }
         return provider.trim().toLowerCase(Locale.ROOT);
     }
-
     private String resolveDefaultModel() {
         String configuredDefault = sanitizeModel(aiProperties.getDefaultModel());
         List<String> allowedModels = getAllowedModels();
         if (configuredDefault != null && allowedModels.contains(configuredDefault)) {
             return configuredDefault;
         }
-        // 如果 defaultModel 配错了，就回退到第一个可用模型，避免页面初始化或聊天请求直接崩溃。
+        // If defaultModel is misconfigured, fall back to the first available model to prevent crashes.
         return allowedModels.isEmpty() ? "" : allowedModels.get(0);
     }
-
     private String buildEndpoint(String baseUrl, String chatPath) {
         String normalizedBase = baseUrl.trim();
         String normalizedPath = StringUtils.hasText(chatPath) ? chatPath.trim() : "/chat/completions";
-
         boolean baseEndsWithSlash = normalizedBase.endsWith("/");
         boolean pathStartsWithSlash = normalizedPath.startsWith("/");
-
         if (baseEndsWithSlash && pathStartsWithSlash) {
             return normalizedBase + normalizedPath.substring(1);
         }
@@ -230,28 +201,23 @@ public class AiChatService {
         }
         return normalizedBase + normalizedPath;
     }
-
     @SuppressWarnings("unchecked")
     private String extractContent(Map body) {
         if (body == null) {
             return null;
         }
-
         Object choicesObj = body.get("choices");
         if (!(choicesObj instanceof List<?> choices) || choices.isEmpty()) {
             return null;
         }
-
         Object firstObj = choices.get(0);
         if (!(firstObj instanceof Map<?, ?> firstChoice)) {
             return null;
         }
-
         Object messageObj = firstChoice.get("message");
         if (!(messageObj instanceof Map<?, ?> messageMap)) {
             return null;
         }
-
         Object contentObj = messageMap.get("content");
         String content = contentObj instanceof String ? (String) contentObj : null;
         if (!StringUtils.hasText(content)) {
@@ -259,15 +225,12 @@ public class AiChatService {
         }
         return content;
     }
-
     private String appendDisclaimer(String answer) {
         if (answer.contains(DISCLAIMER)) {
             return answer;
         }
         return answer + "\n\n" + DISCLAIMER;
     }
-
-
     private boolean isTimeout(ResourceAccessException ex) {
         Throwable cause = ex.getCause();
         if (cause instanceof SocketTimeoutException) {
@@ -281,4 +244,3 @@ public class AiChatService {
         return normalized.contains("timed out") || normalized.contains("timeout");
     }
 }
-

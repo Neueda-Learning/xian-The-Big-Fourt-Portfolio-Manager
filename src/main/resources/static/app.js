@@ -296,7 +296,7 @@
     }
 
     function bindAiAssistant() {
-        // 获取 AI 面板中会用到的 DOM 元素，后续事件都围绕这些元素展开。
+        // Retrieve all DOM elements used by the AI panel.
         const form = document.getElementById("ai-chat-form");
         const modelSelect = document.getElementById("ai-model");
         const messageInput = document.getElementById("ai-message");
@@ -306,53 +306,45 @@
         const loadingEl = document.getElementById("ai-loading");
         const errorEl = document.getElementById("ai-error");
         const providerNameEl = document.getElementById("ai-provider-name");
-
         function appendChatMessage(type, text, metaText) {
             const bubble = document.createElement("div");
             bubble.classList.add("ai-message", type === "user" ? "user" : "assistant");
             if (metaText) {
                 const meta = document.createElement("span");
                 meta.classList.add("ai-message-meta");
-                // 消息头部显示“角色 + 所选模型”，帮助用户确认当前回答来自哪个智谱模型。
+                // Show role + selected model in the message header.
                 meta.textContent = metaText;
                 bubble.appendChild(meta);
             }
             const content = document.createElement("span");
-            // 使用 textContent 可以避免把 AI 文本当成 HTML 执行，降低 XSS 风险。
+            // Use textContent to prevent XSS — AI text is never executed as HTML.
             content.textContent = text;
             bubble.appendChild(content);
             messages.appendChild(bubble);
-            // 自动滚动到最新一条消息。
             messages.scrollTop = messages.scrollHeight;
         }
-
         function setLoading(loading) {
             sendButton.disabled = loading || !hasValidModel();
             messageInput.disabled = loading;
             modelSelect.disabled = loading || !modelSelect.options.length;
             loadingEl.hidden = !loading;
         }
-
         function hasValidModel() {
             return Boolean(modelSelect.value && modelSelect.value.trim());
         }
-
         function showAiError(message) {
             errorEl.textContent = message;
             errorEl.hidden = false;
         }
-
         function clearAiError() {
             errorEl.textContent = "";
             errorEl.hidden = true;
         }
-
         function updateSendButtonAvailability() {
             sendButton.disabled = !hasValidModel();
         }
-
-        // 前端启动时先从后端 GET /api/ai/models 读取模型列表。
-        // 这样可保证“允许选择哪些智谱模型”由后端配置统一控制，而不是写死在 JS 中。
+        // On startup, load the model list from the backend via GET /api/ai/models.
+        // This keeps the allow-list under backend control, not hard-coded in JavaScript.
         async function loadAiModels() {
             clearAiError();
             modelSelect.disabled = true;
@@ -360,52 +352,43 @@
             while (modelSelect.firstChild) {
                 modelSelect.removeChild(modelSelect.firstChild);
             }
-
             try {
                 const response = await fetch("/api/ai/models");
                 const contentType = response.headers.get("content-type") || "";
                 let payload = null;
-
                 if (contentType.includes("application/json")) {
                     payload = await response.json();
                 } else {
                     payload = await response.text();
                 }
-
                 if (!response.ok) {
-                    throw new Error(safeErrorMessage(payload, "无法加载 AI 模型列表。"));
+                    throw new Error(safeErrorMessage(payload, "Failed to load AI model list."));
                 }
-
                 const models = Array.isArray(payload?.models) ? payload.models : [];
                 const provider = typeof payload?.provider === "string" ? payload.provider.trim() : "zhipu";
                 const defaultModel = typeof payload?.defaultModel === "string" ? payload.defaultModel.trim() : "";
-
                 providerNameEl.textContent = provider === "zhipu" ? "Zhipu BigModel" : provider || "Zhipu BigModel";
-
                 if (models.length === 0) {
                     const option = document.createElement("option");
                     option.value = "";
                     option.textContent = "No available models";
                     modelSelect.appendChild(option);
-                    showAiError("当前没有可用的智谱模型，请联系管理员检查后端配置。");
+                    showAiError("No Zhipu models are available. Please contact the administrator.");
                     updateSendButtonAvailability();
                     return;
                 }
-
                 models.forEach((modelName) => {
                     const option = document.createElement("option");
                     option.value = modelName;
                     option.textContent = modelName;
                     modelSelect.appendChild(option);
                 });
-
-                // 默认选中项以后端返回的 defaultModel 为准；若后端已回退到第一个可用模型，这里直接沿用。
+                // Use the defaultModel from the backend as the initial selection.
                 if (defaultModel && models.includes(defaultModel)) {
                     modelSelect.value = defaultModel;
                 } else {
                     modelSelect.value = models[0];
                 }
-
                 modelSelect.disabled = false;
                 updateSendButtonAvailability();
             } catch (error) {
@@ -413,108 +396,87 @@
                 option.value = "";
                 option.textContent = "Failed to load models";
                 modelSelect.appendChild(option);
-                showAiError(error?.message || "无法加载 AI 模型列表，请稍后重试。");
+                showAiError(error?.message || "Failed to load AI model list. Please try again later.");
                 updateSendButtonAvailability();
             }
         }
-
         async function sendAiMessage() {
             clearAiError();
             const model = modelSelect.value ? modelSelect.value.trim() : "";
-            // 读取输入框内容，trim() 去掉首尾空白，避免提交空格消息。
             const rawMessage = messageInput.value || "";
             const userMessage = rawMessage.trim();
-
             if (!model) {
-                showAiError("请先选择一个智谱模型。");
+                showAiError("Please select a Zhipu model first.");
                 return;
             }
-
             if (!userMessage) {
-                showAiError("请输入问题后再发送。");
+                showAiError("Please enter a question before sending.");
                 return;
             }
             if (userMessage.length > 2000) {
-                showAiError("问题长度不能超过 2000 个字符。");
+                showAiError("Question must not exceed 2000 characters.");
                 return;
             }
-
-            appendChatMessage("user", userMessage, `用户 · ${model}`);
+            appendChatMessage("user", userMessage, "You - " + model);
             setLoading(true);
-
             try {
-                // fetch 会向后端发送 HTTP 请求；这里使用相对路径，表示同域调用 Spring Boot 后端。
                 const response = await fetch("/api/ai/chat", {
-                    // method: POST 表示向服务器提交数据。
                     method: "POST",
-                    // Content-Type: application/json 表示请求体是 JSON。
                     headers: { "Content-Type": "application/json" },
-                    // JSON.stringify 把“所选模型 + 用户问题”一起发送给后端；浏览器不会接触 API Key。
+                    // Send the selected model and user question; the browser never touches the API key.
                     body: JSON.stringify({ model: model, message: userMessage })
                 });
-
                 const contentType = response.headers.get("content-type") || "";
                 let payload = null;
-
                 if (contentType.includes("application/json")) {
-                    // response.json() 把响应体解析成 JS 对象。
                     payload = await response.json();
                 } else {
                     const text = await response.text();
                     payload = text;
                 }
-
                 if (!response.ok) {
-                    throw new Error(safeErrorMessage(payload, "AI 请求失败，请稍后重试。"));
+                    throw new Error(safeErrorMessage(payload, "AI request failed. Please try again later."));
                 }
-
-                // data.answer 来自后端 AiChatResponse 的 answer 字段。
+                // payload.answer comes from the backend AiChatResponse "answer" field.
                 const answer = typeof payload?.answer === "string" ? payload.answer.trim() : "";
                 if (!answer) {
-                    throw new Error("AI 暂时没有返回有效回答。");
+                    throw new Error("AI did not return a valid response.");
                 }
-
                 const responseModel = typeof payload?.model === "string" && payload.model.trim() ? payload.model.trim() : model;
-                // 将 AI 回答显示在左侧消息区域，并标明回答使用的智谱模型。
-                appendChatMessage("assistant", answer, `智谱 AI · ${responseModel}`);
+                // Display the AI response labelled with the Zhipu model used.
+                appendChatMessage("assistant", answer, "Zhipu AI - " + responseModel);
                 messageInput.value = "";
             } catch (error) {
-                // 捕获网络中断、超时或后端错误，避免未处理异常影响整页功能。
-                showAiError(error?.message || "暂时无法连接 AI 服务，请稍后重试。");
+                // Catch network errors, timeouts, or backend errors.
+                showAiError(error?.message || "Unable to connect to the AI service. Please try again later.");
             } finally {
-                // 请求结束后恢复按钮和输入框，关闭 loading 状态。
+                // Re-enable controls after the request completes.
                 setLoading(false);
                 messageInput.focus();
             }
         }
-
         modelSelect.addEventListener("change", () => {
             clearAiError();
             updateSendButtonAvailability();
         });
-
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
             await sendAiMessage();
         });
-
         messageInput.addEventListener("keydown", async (event) => {
-            // 回车发送，Shift + Enter 换行，符合常见聊天输入习惯。
+            // Enter sends; Shift+Enter inserts a new line.
             if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 await sendAiMessage();
             }
         });
-
         clearButton.addEventListener("click", () => {
             messages.textContent = "";
             clearAiError();
             messageInput.focus();
         });
-
         loadAiModels();
     }
-
     bindTabs();
     bindPortfolio();
     bindHolding();
