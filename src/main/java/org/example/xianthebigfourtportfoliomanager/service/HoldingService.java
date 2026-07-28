@@ -28,6 +28,10 @@ public class HoldingService {
         return holdingRepository.existsById(holdingId);
     }
 
+    public List<String> getDistinctTickers() {
+        return holdingRepository.getDistinctTickers();
+    }
+
     @Transactional
     public Holding create(Holding holding) {
         return holdingRepository.save(holding);

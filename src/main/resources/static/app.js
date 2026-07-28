@@ -177,11 +177,12 @@
     function bindTransaction() {
         document.getElementById("transaction-create-form").addEventListener("submit", async (e) => {
             e.preventDefault();
+            const priceInput = document.getElementById("transaction-price").value.trim();
             const payload = {
                 holdingId: Number(document.getElementById("transaction-holding-id").value),
                 type: document.getElementById("transaction-type").value,
                 quantity: Number(document.getElementById("transaction-quantity").value),
-                price: Number(document.getElementById("transaction-price").value),
+                price: priceInput ? Number(priceInput) : null,
                 tradeDate: formatDateTimeLocal(document.getElementById("transaction-trade-date").value)
             };
             const msg = await api("/savetransaction", {
@@ -209,11 +210,12 @@
         document.getElementById("transaction-update-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const id = document.getElementById("transaction-update-id").value;
+            const priceInput = document.getElementById("transaction-update-price").value.trim();
             const payload = {
                 holdingId: Number(document.getElementById("transaction-update-holding-id").value),
                 type: document.getElementById("transaction-update-type").value,
                 quantity: Number(document.getElementById("transaction-update-quantity").value),
-                price: Number(document.getElementById("transaction-update-price").value),
+                price: priceInput ? Number(priceInput) : null,
                 tradeDate: formatDateTimeLocal(document.getElementById("transaction-update-trade-date").value)
             };
             const msg = await api(`/transaction/${id}`, {
@@ -290,6 +292,22 @@
         });
     }
 
+    async function loadInitialYahooData() {
+        try {
+            const status = await api("/yahoo/bootstrap/status");
+            document.getElementById("yahoo-sync-all-result").textContent = JSON.stringify(status, null, 2);
+
+            const latestRows = await api("/prices/latest");
+            renderTable("price-list", latestRows);
+
+            if (status?.completed) {
+                showToast(`Startup Yahoo sync saved ${status.savedCount}/${status.tickerCount}`);
+            }
+        } catch (e) {
+            showToast(e.message);
+        }
+    }
+
     bindTabs();
     bindPortfolio();
     bindHolding();
@@ -298,4 +316,5 @@
     bindYahooSync();
     bindGlobalErrorHandler();
     loadPortfolios();
+    loadInitialYahooData();
 })();

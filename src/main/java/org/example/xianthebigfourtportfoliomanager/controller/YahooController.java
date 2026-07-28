@@ -5,7 +5,9 @@ import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
 import org.example.xianthebigfourtportfoliomanager.entity.priceHistory;
 import org.example.xianthebigfourtportfoliomanager.service.HoldingService;
 import org.example.xianthebigfourtportfoliomanager.service.PortfolioService;
+import org.example.xianthebigfourtportfoliomanager.service.YahooBootstrapService;
 import org.example.xianthebigfourtportfoliomanager.service.YahooFinanceService;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,15 +25,23 @@ public class YahooController {
     private final YahooFinanceService yahooFinanceService;
     private final HoldingService holdingService;
     private final PortfolioService portfolioService;
+    private final YahooBootstrapService yahooBootstrapService;
 
     public YahooController(
             YahooFinanceService yahooFinanceService,
             HoldingService holdingService,
-            PortfolioService portfolioService
+            PortfolioService portfolioService,
+            YahooBootstrapService yahooBootstrapService
     ) {
         this.yahooFinanceService = yahooFinanceService;
         this.holdingService = holdingService;
         this.portfolioService = portfolioService;
+        this.yahooBootstrapService = yahooBootstrapService;
+    }
+
+    @GetMapping("/yahoo/bootstrap/status")
+    public Map<String, Object> getBootstrapStatus() {
+        return yahooBootstrapService.getBootstrapStatus();
     }
 
     @PostMapping("/yahoo/sync/ticker/{ticker}")

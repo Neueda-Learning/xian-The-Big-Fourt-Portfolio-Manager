@@ -97,6 +97,63 @@ public class PriceHistoryRepository {
         }, ticker, startDate, endDate);
     }
 
+    public priceHistory getLatestPriceByTicker(String ticker) {
+        String sql = "select * from price_history where ticker = ? order by price_time desc limit 1";
+        List<priceHistory> list = jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Date priceDate = rs.getDate("price_date");
+            Timestamp priceTime = rs.getTimestamp("price_time");
+            Timestamp fetchedAt = rs.getTimestamp("fetched_at");
+            Timestamp createAt = rs.getTimestamp("create_at");
+            return new priceHistory(
+                    rs.getInt("id"),
+                    rs.getString("ticker"),
+                    priceDate == null ? null : priceDate.toLocalDate(),
+                    priceTime == null ? null : priceTime.toLocalDateTime(),
+                    rs.getBigDecimal("open_price"),
+                    rs.getBigDecimal("high_price"),
+                    rs.getBigDecimal("low_price"),
+                    rs.getBigDecimal("close_price"),
+                    rs.getBigDecimal("adjusted_close"),
+                    rs.getObject("volume", Long.class),
+                    rs.getString("currency"),
+                    rs.getString("raw_payload"),
+                    fetchedAt == null ? null : fetchedAt.toLocalDateTime(),
+                    createAt == null ? null : createAt.toLocalDateTime()
+            );
+        }, ticker);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    public List<priceHistory> getLatestPrices() {
+        String sql = "select ph.* from price_history ph " +
+                "inner join (select ticker, max(price_time) as max_time from price_history group by ticker) latest " +
+                "on ph.ticker = latest.ticker and ph.price_time = latest.max_time " +
+                "order by ph.ticker asc";
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Date priceDate = rs.getDate("price_date");
+            Timestamp priceTime = rs.getTimestamp("price_time");
+            Timestamp fetchedAt = rs.getTimestamp("fetched_at");
+            Timestamp createAt = rs.getTimestamp("create_at");
+            return new priceHistory(
+                    rs.getInt("id"),
+                    rs.getString("ticker"),
+                    priceDate == null ? null : priceDate.toLocalDate(),
+                    priceTime == null ? null : priceTime.toLocalDateTime(),
+                    rs.getBigDecimal("open_price"),
+                    rs.getBigDecimal("high_price"),
+                    rs.getBigDecimal("low_price"),
+                    rs.getBigDecimal("close_price"),
+                    rs.getBigDecimal("adjusted_close"),
+                    rs.getObject("volume", Long.class),
+                    rs.getString("currency"),
+                    rs.getString("raw_payload"),
+                    fetchedAt == null ? null : fetchedAt.toLocalDateTime(),
+                    createAt == null ? null : createAt.toLocalDateTime()
+            );
+        });
+    }
+
     public priceHistory save(priceHistory priceHistory) {
         String sql = "insert into price_history (ticker, price_date, price_time, open_price, high_price, low_price, close_price, adjusted_close, volume, currency, raw_payload, fetched_at) values (?, ?, coalesce(?, CURRENT_TIMESTAMP), ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
         int rows = jdbcTemplate.update(

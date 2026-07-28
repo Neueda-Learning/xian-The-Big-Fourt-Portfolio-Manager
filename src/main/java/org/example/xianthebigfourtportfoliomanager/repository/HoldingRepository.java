@@ -61,6 +61,11 @@ public class HoldingRepository {
         }, portfolioId);
     }
 
+    public List<String> getDistinctTickers() {
+        String sql = "select distinct upper(trim(ticker)) as ticker from holding where ticker is not null and trim(ticker) <> '' order by upper(trim(ticker))";
+        return jdbcTemplate.queryForList(sql, String.class);
+    }
+
     public Holding save(Holding holding) {
         String sql = "insert into holding (portfolio_id, asset_type, ticker, quantity, purchase_price, purchase_date, currency) values (?, ?, ?, ?, ?, ?, ?)";
         int rows = jdbcTemplate.update(

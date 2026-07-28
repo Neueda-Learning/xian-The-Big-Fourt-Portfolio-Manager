@@ -154,7 +154,7 @@
                     <label>Holding ID <input type="number" id="transaction-holding-id" min="1" required></label>
                     <label>Type <input type="text" id="transaction-type" placeholder="BUY/SELL" required></label>
                     <label>Quantity <input type="number" id="transaction-quantity" step="0.0001" required></label>
-                    <label>Price <input type="number" id="transaction-price" step="0.0001" required></label>
+                    <label>Price (optional, auto from Yahoo latest) <input type="number" id="transaction-price" step="0.0001"></label>
                     <label>Trade DateTime <input type="datetime-local" id="transaction-trade-date" required></label>
                     <button type="submit">Save</button>
                 </form>
@@ -193,7 +193,7 @@
                 <label>Holding ID <input type="number" id="transaction-update-holding-id" min="1" required></label>
                 <label>Type <input type="text" id="transaction-update-type" required></label>
                 <label>Quantity <input type="number" id="transaction-update-quantity" step="0.0001" required></label>
-                <label>Price <input type="number" id="transaction-update-price" step="0.0001" required></label>
+                <label>Price (optional, auto from Yahoo latest) <input type="number" id="transaction-update-price" step="0.0001"></label>
                 <label>Trade DateTime <input type="datetime-local" id="transaction-update-trade-date" required></label>
                 <button type="submit">Update</button>
             </form>
