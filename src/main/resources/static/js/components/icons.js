@@ -16,5 +16,6 @@ export const icons = {
     edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.3V20h2.7l8-8-2.7-2.7zm12.9-10a1 1 0 0 1 1.4 0l1.4 1.4a1 1 0 0 1 0 1.4l-1.2 1.2-2.8-2.8z"/></svg>',
     trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4zm-1 6h2v9H8zm6 0h2v9h-2z"/></svg>',
     info: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m-1 5h2v2h-2zm0 4h2v6h-2z"/></svg>',
-    menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>'
+    menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>',
+    aiChat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.5 2 2 5.6 2 10c0 2.3.9 4.4 2.5 6L3 22l4.2-2.5c1.2.3 2.5.5 3.8.5 5.5 0 10-3.6 10-8S17.5 2 12 2m0 14c-1 0-2-.2-2.9-.5l-.8.5-2.5 1.5.9-3-.5-.8C4.5 11.5 4 10.8 4 10c0-3.3 3.6-6 8-6s8 2.7 8 6-3.6 6-8 6z"/></svg>'
 };

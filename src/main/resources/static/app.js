@@ -9,6 +9,7 @@ import { HoldingsTable } from "./js/components/HoldingsTable.js";
 import { RecentTransactions } from "./js/components/RecentTransactions.js";
 import { AddAssetModal } from "./js/components/AddAssetModal.js";
 import { ConfirmDeleteModal } from "./js/components/ConfirmDeleteModal.js";
+import { AIChat } from "./js/components/AIChat.js";
 import { icons } from "./js/components/icons.js";
 import { generatePerformanceData } from "./js/data/mockData.js";
 import { compactDate, formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "./js/utils/formatters.js";
@@ -39,7 +40,14 @@ const state = {
     darkMode: savedTheme === "dark",
     editingTransactionId: null,
     priceMessage: "",
-    transactionMessage: ""
+    transactionMessage: "",
+    // AI Chat state
+    aiModels: [],
+    selectedAiModel: "",
+    aiMessages: [],
+    aiLoading: false,
+    aiError: "",
+    aiResponseCache: {} // Cache for AI responses to common questions
 };
 
 let performanceChart;
@@ -251,6 +259,87 @@ async function refreshPortfolioData() {
     buildPerformanceSeries();
 }
 
+async function loadAiModels() {
+    try {
+        const response = await apiRequest("/api/ai/models");
+        state.aiModels = response.models || [];
+        state.selectedAiModel = response.defaultModel || state.aiModels[0] || "";
+        render();
+    } catch (error) {
+        console.error("Failed to load AI models:", error);
+        state.aiError = "Failed to load AI models. Please refresh the page.";
+        render();
+    }
+}
+
+async function sendAiMessage(message) {
+    if (!message.trim()) return;
+
+    const normalizedMessage = message.toLowerCase().trim();
+
+    // Add user message to chat
+    state.aiMessages.push({
+        role: "user",
+        content: message
+    });
+
+    state.aiLoading = true;
+    state.aiError = "";
+    render();
+
+    try {
+        // Check if response is cached (for common questions)
+        const cacheKey = normalizedMessage;
+        if (state.aiResponseCache[cacheKey]) {
+            // Use cached response with slight delay for consistency
+            await new Promise(resolve => setTimeout(resolve, 200));
+            state.aiMessages.push({
+                role: "assistant",
+                content: state.aiResponseCache[cacheKey]
+            });
+            state.aiError = "";
+        } else {
+            // Make API request
+            const response = await apiRequest("/api/ai/chat", {
+                method: "POST",
+                body: JSON.stringify({
+                    model: state.selectedAiModel,
+                    message: message
+                })
+            });
+
+            const answer = response.answer || "I didn't receive a response. Please try again.";
+
+            // Cache the response for future use (only for non-empty answers)
+            if (answer && answer.length > 10) {
+                state.aiResponseCache[cacheKey] = answer;
+            }
+
+            // Add AI response to chat
+            state.aiMessages.push({
+                role: "assistant",
+                content: answer
+            });
+
+            state.aiError = "";
+        }
+    } catch (error) {
+        state.aiError = error.message || "Failed to send message. Please try again.";
+        // Remove the last user message on error
+        state.aiMessages.pop();
+    } finally {
+        state.aiLoading = false;
+        render();
+        // Scroll to bottom of chat
+        setTimeout(() => {
+            const chatContainer = document.getElementById("chat-messages");
+            if (chatContainer) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }, 0);
+    }
+}
+
 async function loadInitialData() {
     state.loading = true;
     state.globalError = "";
@@ -261,6 +350,9 @@ async function loadInitialData() {
         state.portfolios = Array.isArray(portfolios) ? portfolios : [];
         state.selectedPortfolioId = state.portfolios[0]?.id || null;
         await refreshPortfolioData();
+
+        // Load AI models after loading portfolio data
+        await loadAiModels();
     } catch (error) {
         state.globalError = error.message;
     } finally {
@@ -407,17 +499,6 @@ function getViewConfig(metrics) {
         };
     }
 
-    if (state.activeNav === "Performance") {
-        return {
-            ...defaults,
-            title: "Performance",
-            subtitle: "Analyze portfolio growth and allocation trends",
-            showAddAsset: false,
-            showHoldings: false,
-            showTransactions: false,
-            transactionsMarkup: renderPriceHistoryManager()
-        };
-    }
 
     if (state.activeNav === "Reports") {
         return {
@@ -429,6 +510,26 @@ function getViewConfig(metrics) {
             showPerformance: false,
             showTransactions: false,
             holdingsMarkup: renderReportsPanel(metrics)
+        };
+    }
+
+    if (state.activeNav === "AI Chat") {
+        return {
+            ...defaults,
+            title: "AI Assistant",
+            subtitle: "Ask questions about your portfolio and investments",
+            showAddAsset: false,
+            showSummary: false,
+            showPerformance: false,
+            showTransactions: false,
+            showHoldings: false,
+            customMarkup: AIChat(state, {
+                availableModels: state.aiModels,
+                selectedModel: state.selectedAiModel,
+                messages: state.aiMessages,
+                loading: state.aiLoading,
+                error: state.aiError
+            })
         };
     }
 
@@ -679,26 +780,43 @@ function render() {
         ? `<article class="card info-panel"><h2>System Message</h2><p class="form-error">${toInputSafeText(state.globalError)}</p></article>`
         : "";
 
-    appRoot.innerHTML = AppLayout({
-        topNavbar: TopNavbar(),
-        sidebar: Sidebar({
-            totalValue: formatCurrency(metrics.totalValue),
-            dayChange: `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})`,
-            activeNav: state.activeNav
-        }),
-        header: DashboardHeader({
-            title: view.title,
-            subtitle: view.subtitle,
-            showAddAsset: view.showAddAsset,
-            extraControls: `<label class="header-select-wrap">Portfolio<select id="portfolio-switch" class="header-select">${portfolioOptions}</select></label>`
-        }),
-        summaryCards: view.showSummary ? summaryCards : globalErrorMarkup,
-        charts,
-        holdingsTable: holdingsMarkup,
-        recentTransactions: transactionsMarkup,
-        addAssetModal: AddAssetModal(state.addModalOpen, getEditingAsset()),
-        confirmDeleteModal: ConfirmDeleteModal(getDeleteTargetAsset())
-    });
+    // For AI Chat and other custom views, render directly instead of using AppLayout
+    if (view.customMarkup) {
+        appRoot.innerHTML = `
+            <div class="dashboard-shell">
+                ${TopNavbar()}
+                <div class="dashboard-body">
+                    ${Sidebar({
+                        totalValue: formatCurrency(metrics.totalValue),
+                        dayChange: `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})`,
+                        activeNav: state.activeNav
+                    })}
+                    ${view.customMarkup}
+                </div>
+            </div>
+        `;
+    } else {
+        appRoot.innerHTML = AppLayout({
+            topNavbar: TopNavbar(),
+            sidebar: Sidebar({
+                totalValue: formatCurrency(metrics.totalValue),
+                dayChange: `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})`,
+                activeNav: state.activeNav
+            }),
+            header: DashboardHeader({
+                title: view.title,
+                subtitle: view.subtitle,
+                showAddAsset: view.showAddAsset,
+                extraControls: `<label class="header-select-wrap">Portfolio<select id="portfolio-switch" class="header-select">${portfolioOptions}</select></label>`
+            }),
+            summaryCards: view.showSummary ? summaryCards : globalErrorMarkup,
+            charts,
+            holdingsTable: holdingsMarkup,
+            recentTransactions: transactionsMarkup,
+            addAssetModal: AddAssetModal(state.addModalOpen, getEditingAsset()),
+            confirmDeleteModal: ConfirmDeleteModal(getDeleteTargetAsset())
+        });
+    }
 
     document.body.classList.toggle("sidebar-open", state.sidebarOpen);
     applyTheme();
@@ -1040,6 +1158,53 @@ function bindEvents() {
             state.editingAssetId = Number(button.dataset.editId);
             state.addModalOpen = true;
             render();
+        });
+    });
+
+    // AI Chat event listeners
+    const aiModelSelect = document.getElementById("ai-model-select");
+    if (aiModelSelect) {
+        aiModelSelect.addEventListener("change", (event) => {
+            state.selectedAiModel = event.target.value;
+            render();
+        });
+    }
+
+    const aiChatForm = document.getElementById("ai-chat-form");
+    if (aiChatForm) {
+        aiChatForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const input = document.getElementById("ai-message-input");
+            if (input) {
+                const message = input.value.trim();
+                if (message) {
+                    input.value = "";
+                    await sendAiMessage(message);
+                }
+            }
+        });
+    }
+
+    const aiInputTextarea = document.getElementById("ai-message-input");
+    if (aiInputTextarea) {
+        aiInputTextarea.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                const form = document.getElementById("ai-chat-form");
+                if (form) {
+                    form.dispatchEvent(new Event("submit"));
+                }
+            }
+        });
+    }
+
+    // Handle suggestion buttons
+    document.querySelectorAll(".ai-suggestion-btn").forEach((button) => {
+        button.addEventListener("click", () => {
+            const suggestion = button.dataset.suggestion;
+            if (suggestion) {
+                sendAiMessage(suggestion);
+            }
         });
     });
 

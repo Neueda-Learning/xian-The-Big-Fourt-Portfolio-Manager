@@ -4,8 +4,8 @@ const navItems = [
     { key: "Dashboard", icon: icons.home },
     { key: "Holdings", icon: icons.holdings },
     { key: "Transactions", icon: icons.transactions },
-    { key: "Performance", icon: icons.performance },
     { key: "Reports", icon: icons.reports },
+    { key: "AI Chat", icon: icons.aiChat },
     { key: "Settings", icon: icons.settings }
 ];
 
