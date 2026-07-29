@@ -406,7 +406,9 @@ public class TransactionService {
     }
 
     private BigDecimal cashDeltaFor(Transaction tx) {
+        // Calculate the amount based on transaction quantity and price (the price entered by user when selling)
         BigDecimal amount = tx.getQuantity().multiply(tx.getPrice());
+        // For SELL: user receives money (+amount), for BUY: user pays money (-amount)
         return TX_SELL.equals(tx.getType()) ? amount : amount.negate();
     }
 
