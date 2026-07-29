@@ -3,7 +3,9 @@ package org.example.xianthebigfourtportfoliomanager.service;
 import org.example.xianthebigfourtportfoliomanager.entity.AssetType;
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
 import org.example.xianthebigfourtportfoliomanager.entity.Transaction;
+import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
 import org.example.xianthebigfourtportfoliomanager.repository.HoldingRepository;
+import org.example.xianthebigfourtportfoliomanager.repository.PortfolioRepository;
 import org.example.xianthebigfourtportfoliomanager.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,10 +32,12 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final HoldingRepository holdingRepository;
+    private final PortfolioRepository portfolioRepository;
 
-    public TransactionService(TransactionRepository transactionRepository, HoldingRepository holdingRepository) {
+    public TransactionService(TransactionRepository transactionRepository, HoldingRepository holdingRepository, PortfolioRepository portfolioRepository) {
         this.transactionRepository = transactionRepository;
         this.holdingRepository = holdingRepository;
+        this.portfolioRepository = portfolioRepository;
     }
 
     public List<Transaction> getTransactionsByHoldingId(int holdingId) {
@@ -44,15 +48,40 @@ public class TransactionService {
         return transactionRepository.getTransactionById(id);
     }
 
+    public List<Transaction> getTransactionsByPortfolioId(int portfolioId) {
+        requirePortfolio(portfolioId);
+        return transactionRepository.getTransactionsByPortfolioId(portfolioId);
+    }
+
+    @Transactional
+    public Transaction buy(int portfolioId, Transaction transaction) {
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction payload is required.");
+        }
+        transaction.setType(TX_BUY);
+        ensureHoldingBelongsToPortfolio(transaction.getHoldingId(), portfolioId);
+        return create(transaction);
+    }
+
+    @Transactional
+    public Transaction sell(int portfolioId, Transaction transaction) {
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction payload is required.");
+        }
+        transaction.setType(TX_SELL);
+        ensureHoldingBelongsToPortfolio(transaction.getHoldingId(), portfolioId);
+        return create(transaction);
+    }
+
     @Transactional
     public Transaction create(Transaction transaction) {
         Transaction normalized = normalizeTransaction(transaction);
         Holding assetHolding = requireAssetHolding(normalized.getHoldingId());
-        Holding cashHolding = requireCashHolding(assetHolding.getPortfolioId());
+        portfolio portf = requirePortfolio(assetHolding.getPortfolioId());
 
         ensureSellQuantityValid(normalized, null);
-        applyCashDelta(cashHolding, cashDeltaFor(normalized));
-        holdingRepository.update(cashHolding);
+        applyCashDelta(portf, cashDeltaFor(normalized));
+        portfolioRepository.updateCashBalance(portf.getId(), portf.getCashBalance());
 
         Transaction saved = transactionRepository.save(normalized);
         recalculateHoldingFromTransactions(normalized.getHoldingId());
@@ -74,13 +103,13 @@ public class TransactionService {
         }
 
         Holding assetHolding = requireAssetHolding(normalized.getHoldingId());
-        Holding cashHolding = requireCashHolding(assetHolding.getPortfolioId());
+        portfolio portf = requirePortfolio(assetHolding.getPortfolioId());
 
         ensureSellQuantityValid(normalized, before.getId());
 
         BigDecimal cashAdjustment = cashDeltaFor(normalized).subtract(cashDeltaFor(before));
-        applyCashDelta(cashHolding, cashAdjustment);
-        holdingRepository.update(cashHolding);
+        applyCashDelta(portf, cashAdjustment);
+        portfolioRepository.updateCashBalance(portf.getId(), portf.getCashBalance());
 
         Transaction updated = transactionRepository.update(normalized);
         recalculateHoldingFromTransactions(normalized.getHoldingId());
@@ -92,10 +121,10 @@ public class TransactionService {
     public int deleteById(int id) {
         Transaction before = requireExistingTransaction(id);
         Holding assetHolding = requireAssetHolding(before.getHoldingId());
-        Holding cashHolding = requireCashHolding(assetHolding.getPortfolioId());
+        portfolio portf = requirePortfolio(assetHolding.getPortfolioId());
 
-        applyCashDelta(cashHolding, cashDeltaFor(before).negate());
-        holdingRepository.update(cashHolding);
+        applyCashDelta(portf, cashDeltaFor(before).negate());
+        portfolioRepository.updateCashBalance(portf.getId(), portf.getCashBalance());
 
         int rows = transactionRepository.deleteById(id);
         if (rows > 0) {
@@ -197,11 +226,22 @@ public class TransactionService {
         return holding;
     }
 
-    private Holding requireCashHolding(int portfolioId) {
-        return holdingRepository.getHoldingsByPortfolioId(portfolioId).stream()
-                .filter(h -> h.getAssetType() == AssetType.CASH || (h.getTicker() != null && "CASH".equalsIgnoreCase(h.getTicker())))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("No CASH holding found for portfolio " + portfolioId + ". Please create a CASH holding first."));
+    private void ensureHoldingBelongsToPortfolio(Integer holdingId, int portfolioId) {
+        if (holdingId == null) {
+            throw new IllegalArgumentException("holdingId is required.");
+        }
+        Holding holding = requireAssetHolding(holdingId);
+        if (holding.getPortfolioId() == null || holding.getPortfolioId() != portfolioId) {
+            throw new IllegalArgumentException("Holding does not belong to the target portfolio.");
+        }
+    }
+
+    private portfolio requirePortfolio(int portfolioId) {
+        portfolio p = portfolioRepository.getPortfolioById(portfolioId);
+        if (p == null) {
+            throw new IllegalArgumentException("Portfolio not found: " + portfolioId);
+        }
+        return p;
     }
 
     private void ensureSellQuantityValid(Transaction candidate, Integer excludeTxId) {
@@ -246,16 +286,13 @@ public class TransactionService {
         return TX_SELL.equals(tx.getType()) ? amount : amount.negate();
     }
 
-    private void applyCashDelta(Holding cashHolding, BigDecimal delta) {
-        BigDecimal current = cashHolding.getQuantity() == null ? ZERO : cashHolding.getQuantity();
+    private void applyCashDelta(portfolio portf, BigDecimal delta) {
+        BigDecimal current = portf.getCashBalance() == null ? ZERO : portf.getCashBalance();
         BigDecimal next = current.add(delta);
         if (next.compareTo(ZERO) < 0) {
             throw new IllegalArgumentException("Insufficient cash balance. Available: " + current + ", required change: " + delta.abs());
         }
-        cashHolding.setQuantity(next.setScale(4, RoundingMode.HALF_UP));
-        if (cashHolding.getPurchasePrice() == null || cashHolding.getPurchasePrice().compareTo(ZERO) <= 0) {
-            cashHolding.setPurchasePrice(BigDecimal.ONE);
-        }
+        portf.setCashBalance(next.setScale(4, RoundingMode.HALF_UP));
     }
 }
 

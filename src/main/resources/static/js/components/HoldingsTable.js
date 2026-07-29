@@ -82,8 +82,9 @@ export function HoldingsTable(holdings, searchTerm, selectedType) {
                                     <td class="${positive ? "positive" : "negative"}">${formatPercent(gainPct)}</td>
                                     <td>
                                         <div class="row-actions">
-                                            <button class="icon-btn small" aria-label="Edit ${holding.ticker}" data-edit-id="${holding.id}">${icons.edit}</button>
-                                            <button class="icon-btn small" aria-label="Delete ${holding.ticker}" data-delete-id="${holding.id}">${icons.trash}</button>
+                                            <button class="icon-btn small" aria-label="Buy more ${holding.ticker}" data-buy-id="${holding.id}" title="Buy More">${icons.plus}</button>
+                                            <button class="icon-btn small" aria-label="Sell ${holding.ticker}" data-sell-id="${holding.id}" title="Sell">${icons.transactions}</button>
+                                            <button class="icon-btn small" aria-label="Update price for ${holding.ticker}" data-edit-id="${holding.id}">${icons.edit}</button>
                                         </div>
                                     </td>
                                 </tr>

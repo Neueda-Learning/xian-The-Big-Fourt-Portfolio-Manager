@@ -31,6 +31,11 @@ public class TransactionController {
         return service.getTransactionsByHoldingId(holdingId);
     }
 
+    @GetMapping("/portfolios/{id}/transactions")
+    public List<Transaction> getByPortfolioId(@PathVariable int id) {
+        return service.getTransactionsByPortfolioId(id);
+    }
+
     @PostMapping("/savetransaction")
     public String addTransaction(@RequestBody Transaction transaction) {
         Transaction saved = service.create(transaction);
@@ -41,24 +46,23 @@ public class TransactionController {
         }
     }
 
+    @PostMapping("/portfolios/{id}/trades/buy")
+    public Transaction buy(@PathVariable int id, @RequestBody Transaction transaction) {
+        return service.buy(id, transaction);
+    }
+
+    @PostMapping("/portfolios/{id}/trades/sell")
+    public Transaction sell(@PathVariable int id, @RequestBody Transaction transaction) {
+        return service.sell(id, transaction);
+    }
+
     @PatchMapping("/transaction/{id}")
     public String updateTransaction(@PathVariable int id, @RequestBody Transaction transaction) {
-        transaction.setId(id);
-        Transaction updated = service.update(transaction);
-        if (updated != null) {
-            return "Record has been updated";
-        } else {
-            return "Update failed!";
-        }
+        throw new IllegalArgumentException("Transaction update is disabled. Transactions are immutable once created.");
     }
 
     @DeleteMapping("/delete/transaction/{id}")
     public String deleteTransaction(@PathVariable int id) {
-        int row = service.deleteById(id);
-        if (row == 1) {
-            return "Delete successful " + id;
-        } else {
-            return "Delete failed!";
-        }
+        throw new IllegalArgumentException("Transaction delete is disabled. Transactions are immutable once created.");
     }
 }

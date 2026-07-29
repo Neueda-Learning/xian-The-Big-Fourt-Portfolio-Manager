@@ -8,7 +8,6 @@ import { AssetAllocationChart } from "./js/components/AssetAllocationChart.js";
 import { HoldingsTable } from "./js/components/HoldingsTable.js";
 import { RecentTransactions } from "./js/components/RecentTransactions.js";
 import { AddAssetModal } from "./js/components/AddAssetModal.js";
-import { ConfirmDeleteModal } from "./js/components/ConfirmDeleteModal.js";
 import { icons } from "./js/components/icons.js";
 import { generatePerformanceData } from "./js/data/mockData.js";
 import { compactDate, formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "./js/utils/formatters.js";
@@ -33,11 +32,11 @@ const state = {
     selectedRange: "1Y",
     addModalOpen: false,
     editingAssetId: null,
-    deleteTargetId: null,
     sidebarOpen: false,
     activeNav: "Dashboard",
     darkMode: savedTheme === "dark",
     editingTransactionId: null,
+    tradeDraft: null,
     priceMessage: "",
     transactionMessage: ""
 };
@@ -223,13 +222,8 @@ async function refreshPortfolioData() {
     state.holdings = state.holdingsRaw.map((item) => normalizeHolding(item, detailMap));
 
     const holdingMap = new Map(state.holdings.map((item) => [item.id, item]));
-    const txResult = await Promise.all(
-        state.holdings.map(async (holding) => {
-            const rows = await apiRequest(`/transactions/holding/${holding.id}`);
-            return Array.isArray(rows) ? rows : [];
-        })
-    );
-    const flattened = txResult.flat();
+    const txResult = await apiRequest(`/portfolios/${state.selectedPortfolioId}/transactions`);
+    const flattened = Array.isArray(txResult) ? txResult : [];
     state.transactions = flattened
         .map((item) => normalizeTransaction(item, holdingMap))
         .sort((a, b) => new Date(b.dateRaw).getTime() - new Date(a.dateRaw).getTime());
@@ -272,11 +266,9 @@ async function loadInitialData() {
 function computeMetrics() {
     const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
     const totalCost = state.holdings.reduce((sum, item) => sum + item.quantity * item.avgPrice, 0);
-    const totalGain = totalValue - totalCost;
-    const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
-    const cashBalance = state.holdings
-        .filter((item) => item.type === "Cash")
-        .reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
+    const totalGain = Number(state.performance?.totalReturn ?? (totalValue - totalCost));
+    const totalGainPct = Number(state.performance?.returnRate ?? (totalCost > 0 ? (totalGain / totalCost) * 100 : 0));
+    const cashBalance = Number(state.performance?.cashBalance ?? 0);
 
     const selectedData = getPerformanceDataByRange(state.selectedRange);
     const lastValue = selectedData[selectedData.length - 1]?.value || 0;
@@ -361,13 +353,6 @@ function getEditingAsset() {
         return null;
     }
     return state.holdings.find((holding) => Number(holding.id) === Number(state.editingAssetId)) || null;
-}
-
-function getDeleteTargetAsset() {
-    if (!state.deleteTargetId) {
-        return null;
-    }
-    return state.holdings.find((holding) => Number(holding.id) === Number(state.deleteTargetId)) || null;
 }
 
 function getViewConfig(metrics) {
@@ -485,22 +470,24 @@ function renderSettingsPanel() {
 }
 
 function renderTransactionManager() {
+    const selectedHoldingId = state.tradeDraft?.holdingId;
+    const selectedType = state.tradeDraft?.type || "BUY";
     const holdingOptions = state.holdings
-        .map((holding) => `<option value="${holding.id}">${holding.ticker} (Holding #${holding.id})</option>`)
+        .map((holding) => `<option value="${holding.id}" ${selectedHoldingId === holding.id ? "selected" : ""}>${holding.ticker} (Holding #${holding.id})</option>`)
         .join("");
 
     return `
         <article class="card info-panel">
             <h2>Transaction Manager</h2>
-            <p>Create, edit, and delete transaction records for the selected portfolio.</p>
+            <p>Create BUY/SELL transaction records for the selected portfolio. Transactions are immutable once created.</p>
             <form id="transaction-form" class="manager-grid" novalidate>
                 <label>Holding</label>
                 <select name="holdingId" required>${holdingOptions}</select>
 
                 <label>Type</label>
                 <select name="type" required>
-                    <option value="BUY">BUY</option>
-                    <option value="SELL">SELL</option>
+                    <option value="BUY" ${selectedType === "BUY" ? "selected" : ""}>BUY</option>
+                    <option value="SELL" ${selectedType === "SELL" ? "selected" : ""}>SELL</option>
                 </select>
 
                 <label>Quantity</label>
@@ -527,7 +514,6 @@ function renderTransactionManager() {
                         <th>Qty</th>
                         <th>Price</th>
                         <th>Date</th>
-                        <th>Actions</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -542,9 +528,6 @@ function renderTransactionManager() {
                                 <td>${item.quantity}</td>
                                 <td>${formatCurrency(item.price)}</td>
                                 <td>${toInputSafeText(item.date)}</td>
-                                <td>
-                                    <button class="icon-btn small" type="button" data-tx-delete="${item.id}">${icons.trash}</button>
-                                </td>
                             </tr>
                         `
                             )
@@ -697,7 +680,7 @@ function render() {
         holdingsTable: holdingsMarkup,
         recentTransactions: transactionsMarkup,
         addAssetModal: AddAssetModal(state.addModalOpen, getEditingAsset()),
-        confirmDeleteModal: ConfirmDeleteModal(getDeleteTargetAsset())
+        confirmDeleteModal: ""
     });
 
     document.body.classList.toggle("sidebar-open", state.sidebarOpen);
@@ -921,10 +904,14 @@ function bindEvents() {
                     price: Number(formData.get("price")),
                     tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
                 };
-                await apiRequest("/savetransaction", {
+                const tradePath = payload.type === "SELL"
+                    ? `/portfolios/${state.selectedPortfolioId}/trades/sell`
+                    : `/portfolios/${state.selectedPortfolioId}/trades/buy`;
+                await apiRequest(tradePath, {
                     method: "POST",
                     body: JSON.stringify(payload)
                 });
+                state.tradeDraft = null;
                 state.transactionMessage = "Transaction saved.";
                 await refreshPortfolioData();
                 render();
@@ -934,20 +921,6 @@ function bindEvents() {
             }
         });
     }
-
-    document.querySelectorAll("[data-tx-delete]").forEach((button) => {
-        button.addEventListener("click", async () => {
-            try {
-                await apiRequest(`/delete/transaction/${button.dataset.txDelete}`, { method: "DELETE" });
-                state.transactionMessage = "Transaction deleted.";
-                await refreshPortfolioData();
-                render();
-            } catch (error) {
-                state.transactionMessage = error.message;
-                render();
-            }
-        });
-    });
 
     const priceForm = document.getElementById("price-form");
     if (priceForm) {
@@ -1003,9 +976,8 @@ function bindEvents() {
     const addAssetBtn = document.getElementById("add-asset-btn");
     if (addAssetBtn) {
         addAssetBtn.addEventListener("click", () => {
-            lastFocusedElement = document.activeElement;
-            state.addModalOpen = true;
-            state.editingAssetId = null;
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Use BUY/SELL transactions to change positions and cash.";
             render();
         });
     }
@@ -1026,14 +998,6 @@ function bindEvents() {
         });
     }
 
-    document.querySelectorAll("[data-delete-id]").forEach((button) => {
-        button.addEventListener("click", () => {
-            lastFocusedElement = document.activeElement;
-            state.deleteTargetId = Number(button.dataset.deleteId);
-            render();
-        });
-    });
-
     document.querySelectorAll("[data-edit-id]").forEach((button) => {
         button.addEventListener("click", () => {
             lastFocusedElement = document.activeElement;
@@ -1043,8 +1007,25 @@ function bindEvents() {
         });
     });
 
+    document.querySelectorAll("[data-buy-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+            state.tradeDraft = { holdingId: Number(button.dataset.buyId), type: "BUY" };
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Create BUY transaction (Buy More).";
+            render();
+        });
+    });
+
+    document.querySelectorAll("[data-sell-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+            state.tradeDraft = { holdingId: Number(button.dataset.sellId), type: "SELL" };
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Create SELL transaction.";
+            render();
+        });
+    });
+
     bindAddAssetModalEvents();
-    bindDeleteModalEvents();
     bindModalKeyboardEscape();
 }
 
@@ -1068,45 +1049,26 @@ function bindAddAssetModalEvents() {
 
     form?.addEventListener("submit", async (event) => {
         event.preventDefault();
+        if (!state.editingAssetId) {
+            closeAddAssetModal();
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Use BUY/SELL in Transaction Manager to change positions.";
+            render();
+            return;
+        }
+
         const formData = new FormData(form);
-        const ticker = String(formData.get("ticker") || "").trim().toUpperCase();
-        const name = String(formData.get("name") || "").trim();
-        const type = String(formData.get("type") || "Stock");
-        const quantity = Number(formData.get("quantity"));
         const price = Number(formData.get("price"));
-
-        if (!ticker || !name) {
-            error.textContent = "Ticker and asset name are required.";
+        if (!(price > 0)) {
+            error.textContent = "Current price must be greater than 0.";
             return;
         }
-        if (!(quantity > 0) || !(price >= 0)) {
-            error.textContent = "Quantity must be positive and price cannot be negative.";
-            return;
-        }
-
-        const enumType = type.toUpperCase();
-        const payload = {
-            portfolioId: state.selectedPortfolioId,
-            assetType: enumType,
-            ticker: enumType === "CASH" ? "CASH" : ticker,
-            quantity,
-            purchasePrice: price,
-            purchasedata: new Date().toISOString().slice(0, 10),
-            currency: "USD"
-        };
 
         try {
-            if (state.editingAssetId) {
-                await apiRequest(`/holding/${state.editingAssetId}`, {
-                    method: "PATCH",
-                    body: JSON.stringify(payload)
-                });
-            } else {
-                await apiRequest("/saveholding", {
-                    method: "POST",
-                    body: JSON.stringify(payload)
-                });
-            }
+            const query = `currentPrice=${encodeURIComponent(price.toFixed(4))}`;
+            await apiRequest(`/holding/${state.editingAssetId}/price?${query}`, {
+                method: "PATCH"
+            });
 
             state.globalError = "";
             closeAddAssetModal();
@@ -1123,58 +1085,12 @@ function bindAddAssetModalEvents() {
     });
 }
 
-function bindDeleteModalEvents() {
-    const modal = document.getElementById("confirm-delete-modal");
-    if (!modal) {
-        return;
-    }
-
-    const cancelButton = document.getElementById("cancel-delete-asset");
-    const confirmButton = document.getElementById("confirm-delete-asset");
-
-    cancelButton?.addEventListener("click", () => closeDeleteModal());
-
-    confirmButton?.addEventListener("click", async () => {
-        if (!state.deleteTargetId) {
-            return;
-        }
-        try {
-            await apiRequest(`/delete/holding/${state.deleteTargetId}`, { method: "DELETE" });
-            state.deleteTargetId = null;
-            state.loading = true;
-            render();
-            await refreshPortfolioData();
-            state.loading = false;
-            render();
-            restoreFocus();
-        } catch (error) {
-            state.globalError = error.message;
-            state.deleteTargetId = null;
-            render();
-        }
-    });
-
-    modal.addEventListener("click", (event) => {
-        if (event.target.id === "confirm-delete-modal") {
-            closeDeleteModal();
-        }
-    });
-}
-
 function bindModalKeyboardEscape() {
     if (escapeHandlerBound) {
         return;
     }
 
     document.addEventListener("click", (event) => {
-        const deleteBtn = event.target.closest("[data-delete-id]");
-        if (deleteBtn) {
-            lastFocusedElement = document.activeElement;
-            state.deleteTargetId = Number(deleteBtn.dataset.deleteId);
-            render();
-            return;
-        }
-
         const editBtn = event.target.closest("[data-edit-id]");
         if (editBtn) {
             lastFocusedElement = document.activeElement;
@@ -1188,8 +1104,6 @@ function bindModalKeyboardEscape() {
         if (event.key === "Escape") {
             if (state.addModalOpen) {
                 closeAddAssetModal();
-            } else if (state.deleteTargetId) {
-                closeDeleteModal();
             }
         }
     });
@@ -1200,12 +1114,6 @@ function bindModalKeyboardEscape() {
 function closeAddAssetModal() {
     state.addModalOpen = false;
     state.editingAssetId = null;
-    render();
-    restoreFocus();
-}
-
-function closeDeleteModal() {
-    state.deleteTargetId = null;
     render();
     restoreFocus();
 }

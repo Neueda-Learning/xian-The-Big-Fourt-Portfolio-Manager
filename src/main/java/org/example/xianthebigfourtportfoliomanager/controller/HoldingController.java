@@ -4,16 +4,11 @@ import org.example.xianthebigfourtportfoliomanager.entity.Holding;
 import org.example.xianthebigfourtportfoliomanager.service.HoldingService;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
 public class HoldingController {
-
-    /**
-     * Eren issue: holdings and transactions became inconsistent because controllers wrote directly to repositories.
-     * Fix: route holding mutations through HoldingService so merge logic, cash rules, and transaction mirroring are centralized.
-     * Reviewer: GitHub Copilot (GPT-5.3-Codex).
-     */
 
     private final HoldingService service;
 
@@ -31,34 +26,23 @@ public class HoldingController {
         return service.getHoldingsByPortfolioId(portfolioId);
     }
 
+    @PatchMapping("/holding/{id}/price")
+    public Holding updateCurrentPrice(@PathVariable int id, @RequestParam BigDecimal currentPrice) {
+        return service.updateCurrentPrice(id, currentPrice);
+    }
+
     @PostMapping("/saveholding")
-    public String addHolding(@RequestBody Holding holding) {
-        Holding saved = service.create(holding);
-        if (saved != null) {
-            return "Record added successfully!";
-        } else {
-            return "Insert failed!";
-        }
+    public String addHolding(@RequestBody Holding ignored) {
+        throw new IllegalArgumentException("Holding create is disabled. Use /savetransaction (BUY) to change positions.");
     }
 
     @PatchMapping("/holding/{id}")
-    public String updateHolding(@PathVariable int id, @RequestBody Holding holding) {
-        holding.setId(id);
-        Holding updated = service.update(holding);
-        if (updated != null) {
-            return "Record has been updated";
-        } else {
-            return "Update failed!";
-        }
+    public String updateHolding(@PathVariable int id, @RequestBody Holding ignored) {
+        throw new IllegalArgumentException("Holding quantity edits are disabled. Use /savetransaction for BUY/SELL.");
     }
 
     @DeleteMapping("/delete/holding/{id}")
     public String deleteHolding(@PathVariable int id) {
-        int row = service.deleteById(id);
-        if (row == 1) {
-            return "Delete successful " + id;
-        } else {
-            return "Delete failed!";
-        }
+        throw new IllegalArgumentException("Holding delete is disabled. Quantity changes must come from BUY/SELL only.");
     }
 }

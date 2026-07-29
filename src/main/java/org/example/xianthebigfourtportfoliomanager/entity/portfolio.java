@@ -1,21 +1,26 @@
 package org.example.xianthebigfourtportfoliomanager.entity;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public class portfolio {
     private Integer id;
     private String name;
     private String description;
+    private BigDecimal initialCash;
+    private BigDecimal cashBalance;
     private LocalDateTime createAt;
     private LocalDateTime uodataAt;
 
     public portfolio() {
     }
 
-    public portfolio(Integer id, String name, String description, LocalDateTime createAt, LocalDateTime uodataAt) {
+    public portfolio(Integer id, String name, String description, BigDecimal initialCash, BigDecimal cashBalance, LocalDateTime createAt, LocalDateTime uodataAt) {
         this.id = id;
         this.name = name;
         this.description = description;
+        this.initialCash = initialCash;
+        this.cashBalance = cashBalance;
         this.createAt = createAt;
         this.uodataAt = uodataAt;
     }
@@ -30,6 +35,14 @@ public class portfolio {
 
     public String getDescription() {
         return description;
+    }
+
+    public BigDecimal getInitialCash() {
+        return initialCash;
+    }
+
+    public BigDecimal getCashBalance() {
+        return cashBalance;
     }
 
     public LocalDateTime getCreateAt() {
@@ -50,6 +63,14 @@ public class portfolio {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public void setInitialCash(BigDecimal initialCash) {
+        this.initialCash = initialCash;
+    }
+
+    public void setCashBalance(BigDecimal cashBalance) {
+        this.cashBalance = cashBalance;
     }
 
     public void setCreateAt(LocalDateTime createAt) {
