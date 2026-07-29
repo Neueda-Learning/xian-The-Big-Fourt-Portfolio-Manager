@@ -392,6 +392,13 @@ select:focus-visible {
     font-weight: 700;
 }
 
+.summary-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
 .summary-icon {
     width: 34px;
     height: 34px;
@@ -681,6 +688,7 @@ th {
 .row-actions {
     display: inline-flex;
     gap: 6px;
+    align-items: center;
 }
 
 .icon-btn.small {
@@ -688,6 +696,19 @@ th {
     height: 30px;
     border-radius: 8px;
     border: 1px solid var(--line);
+}
+
+.compact-btn {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.cash-managed-note {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .text-action {

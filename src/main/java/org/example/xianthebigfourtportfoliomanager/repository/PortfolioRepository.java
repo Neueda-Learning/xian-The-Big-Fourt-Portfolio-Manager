@@ -5,7 +5,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Repository
 public class PortfolioRepository {
@@ -33,8 +35,8 @@ public class PortfolioRepository {
     }
 
     public List<portfolio> getAllPortfolios() {
-        String sql = "select * from portfolio";
-        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+        String sql = "select * from portfolio order by id";
+        List<portfolio> rows = jdbcTemplate.query(sql, (rs, rowNum) -> {
             Timestamp createAt = rs.getTimestamp("create_at");
             Timestamp updateAt = rs.getTimestamp("update_at");
             return new portfolio(
@@ -45,6 +47,14 @@ public class PortfolioRepository {
                     updateAt == null ? null : updateAt.toLocalDateTime()
             );
         });
+
+        Map<String, portfolio> unique = new LinkedHashMap<>();
+        for (portfolio item : rows) {
+            String key = (item.getName() == null ? "" : item.getName().trim()) + "\u0000"
+                    + (item.getDescription() == null ? "" : item.getDescription().trim());
+            unique.putIfAbsent(key, item);
+        }
+        return List.copyOf(unique.values());
     }
 
     public portfolio save(portfolio portf) {
@@ -78,4 +88,3 @@ public class PortfolioRepository {
         return count != null && count.intValue() > 0;
     }
 }
-

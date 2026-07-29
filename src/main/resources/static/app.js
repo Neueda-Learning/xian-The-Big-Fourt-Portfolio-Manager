@@ -9,6 +9,7 @@ import { HoldingsTable } from "./js/components/HoldingsTable.js";
 import { RecentTransactions } from "./js/components/RecentTransactions.js";
 import { AddAssetModal } from "./js/components/AddAssetModal.js";
 import { ConfirmDeleteModal } from "./js/components/ConfirmDeleteModal.js";
+import { CashActionModal } from "./js/components/CashActionModal.js";
 import { icons } from "./js/components/icons.js";
 import { generatePerformanceData } from "./js/data/mockData.js";
 import { compactDate, formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "./js/utils/formatters.js";
@@ -34,6 +35,8 @@ const state = {
     addModalOpen: false,
     editingAssetId: null,
     deleteTargetId: null,
+    cashActionMode: null,
+    cashActionHoldingId: null,
     sidebarOpen: false,
     activeNav: "Dashboard",
     darkMode: savedTheme === "dark",
@@ -274,9 +277,7 @@ function computeMetrics() {
     const totalCost = state.holdings.reduce((sum, item) => sum + item.quantity * item.avgPrice, 0);
     const totalGain = totalValue - totalCost;
     const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
-    const cashBalance = state.holdings
-        .filter((item) => item.type === "Cash")
-        .reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
+    const cashBalance = getCurrentCashBalance();
 
     const selectedData = getPerformanceDataByRange(state.selectedRange);
     const lastValue = selectedData[selectedData.length - 1]?.value || 0;
@@ -368,6 +369,23 @@ function getDeleteTargetAsset() {
         return null;
     }
     return state.holdings.find((holding) => Number(holding.id) === Number(state.deleteTargetId)) || null;
+}
+
+function getCashHolding() {
+    if (!state.cashActionHoldingId) {
+        return null;
+    }
+    return state.holdingsRaw.find((holding) => Number(holding.id) === Number(state.cashActionHoldingId)) || null;
+}
+
+function getPrimaryCashHolding() {
+    return state.holdings.find((holding) => holding.type === "Cash") || null;
+}
+
+function getCurrentCashBalance() {
+    return state.holdings
+        .filter((holding) => holding.type === "Cash")
+        .reduce((sum, holding) => sum + holding.quantity * holding.currentPrice, 0);
 }
 
 function getViewConfig(metrics) {
@@ -662,7 +680,17 @@ function render() {
             value: formatCurrency(metrics.cashBalance),
             detail: "Available",
             tone: "neutral",
-            icon: icons.wallet
+            icon: icons.wallet,
+            actions: (() => {
+                const cashHolding = getPrimaryCashHolding();
+                if (!cashHolding) {
+                    return "";
+                }
+                return `
+                    <button class="secondary-btn compact-btn" type="button" data-cash-action="add" data-cash-id="${cashHolding.id}">Add Cash</button>
+                    <button class="secondary-btn compact-btn" type="button" data-cash-action="remove" data-cash-id="${cashHolding.id}">Remove Cash</button>
+                `;
+            })()
         })
     ].join("");
 
@@ -697,7 +725,8 @@ function render() {
         holdingsTable: holdingsMarkup,
         recentTransactions: transactionsMarkup,
         addAssetModal: AddAssetModal(state.addModalOpen, getEditingAsset()),
-        confirmDeleteModal: ConfirmDeleteModal(getDeleteTargetAsset())
+        confirmDeleteModal: ConfirmDeleteModal(getDeleteTargetAsset()),
+        cashActionModal: CashActionModal(state.cashActionMode, getCashHolding(), getCurrentCashBalance())
     });
 
     document.body.classList.toggle("sidebar-open", state.sidebarOpen);
@@ -718,6 +747,8 @@ function render() {
 
     if (state.addModalOpen) {
         focusModalField("asset-ticker");
+    } else if (state.cashActionMode) {
+        focusModalField("cash-action-amount");
     }
 }
 
@@ -854,6 +885,75 @@ function initCharts(totalValue) {
             plugins: [centerLabel]
         });
     }
+}
+
+function bindCashActionModalEvents() {
+    const modal = document.getElementById("cash-action-modal");
+    if (!modal) {
+        return;
+    }
+
+    const form = document.getElementById("cash-action-form");
+    const cancelButton = document.getElementById("cancel-cash-action");
+    const error = document.getElementById("cash-action-error");
+    const cashHolding = getCashHolding();
+
+    cancelButton?.addEventListener("click", () => closeCashActionModal());
+
+    modal.addEventListener("click", (event) => {
+        if (event.target.id === "cash-action-modal") {
+            closeCashActionModal();
+        }
+    });
+
+    form?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!cashHolding) {
+            error.textContent = "Cash holding not found.";
+            return;
+        }
+
+        const amount = Number(new FormData(form).get("amount"));
+        if (!(amount > 0)) {
+            error.textContent = "Amount must be greater than 0.";
+            return;
+        }
+
+        const currentBalance = getCurrentCashBalance();
+        const nextBalance = state.cashActionMode === "remove" ? currentBalance - amount : currentBalance + amount;
+        if (nextBalance < 0) {
+            error.textContent = "Amount exceeds available cash balance.";
+            return;
+        }
+
+        const payload = {
+            portfolioId: cashHolding.portfolioId,
+            assetType: cashHolding.assetType,
+            ticker: cashHolding.ticker || "CASH",
+            quantity: Number(nextBalance.toFixed(4)),
+            purchasePrice: Number(cashHolding.purchasePrice || 1),
+            purchasedata: cashHolding.purchasedata || new Date().toISOString().slice(0, 10),
+            currency: cashHolding.currency || "USD"
+        };
+
+        try {
+            await apiRequest(`/holding/${cashHolding.id}`, {
+                method: "PATCH",
+                body: JSON.stringify(payload)
+            });
+            closeCashActionModal(false);
+            state.loading = true;
+            render();
+            await refreshPortfolioData();
+        } catch (submitError) {
+            error.textContent = submitError.message;
+            return;
+        }
+
+        state.loading = false;
+        render();
+        restoreFocus();
+    });
 }
 
 function bindEvents() {
@@ -1043,8 +1143,18 @@ function bindEvents() {
         });
     });
 
+    document.querySelectorAll("[data-cash-action]").forEach((button) => {
+        button.addEventListener("click", () => {
+            lastFocusedElement = document.activeElement;
+            state.cashActionMode = button.dataset.cashAction;
+            state.cashActionHoldingId = Number(button.dataset.cashId);
+            render();
+        });
+    });
+
     bindAddAssetModalEvents();
     bindDeleteModalEvents();
+    bindCashActionModalEvents();
     bindModalKeyboardEscape();
 }
 
@@ -1188,6 +1298,8 @@ function bindModalKeyboardEscape() {
         if (event.key === "Escape") {
             if (state.addModalOpen) {
                 closeAddAssetModal();
+            } else if (state.cashActionMode) {
+                closeCashActionModal();
             } else if (state.deleteTargetId) {
                 closeDeleteModal();
             }
@@ -1202,6 +1314,15 @@ function closeAddAssetModal() {
     state.editingAssetId = null;
     render();
     restoreFocus();
+}
+
+function closeCashActionModal(shouldRender = true) {
+    state.cashActionMode = null;
+    state.cashActionHoldingId = null;
+    if (shouldRender) {
+        render();
+        restoreFocus();
+    }
 }
 
 function closeDeleteModal() {

@@ -30,10 +30,14 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final HoldingRepository holdingRepository;
+    private final CashBalanceService cashBalanceService;
 
-    public TransactionService(TransactionRepository transactionRepository, HoldingRepository holdingRepository) {
+    public TransactionService(TransactionRepository transactionRepository,
+                              HoldingRepository holdingRepository,
+                              CashBalanceService cashBalanceService) {
         this.transactionRepository = transactionRepository;
         this.holdingRepository = holdingRepository;
+        this.cashBalanceService = cashBalanceService;
     }
 
     public List<Transaction> getTransactionsByHoldingId(int holdingId) {
@@ -48,11 +52,9 @@ public class TransactionService {
     public Transaction create(Transaction transaction) {
         Transaction normalized = normalizeTransaction(transaction);
         Holding assetHolding = requireAssetHolding(normalized.getHoldingId());
-        Holding cashHolding = requireCashHolding(assetHolding.getPortfolioId());
 
         ensureSellQuantityValid(normalized, null);
-        applyCashDelta(cashHolding, cashDeltaFor(normalized));
-        holdingRepository.update(cashHolding);
+        cashBalanceService.applySharedCashDelta(cashDeltaFor(normalized));
 
         Transaction saved = transactionRepository.save(normalized);
         recalculateHoldingFromTransactions(normalized.getHoldingId());
@@ -74,13 +76,11 @@ public class TransactionService {
         }
 
         Holding assetHolding = requireAssetHolding(normalized.getHoldingId());
-        Holding cashHolding = requireCashHolding(assetHolding.getPortfolioId());
 
         ensureSellQuantityValid(normalized, before.getId());
 
         BigDecimal cashAdjustment = cashDeltaFor(normalized).subtract(cashDeltaFor(before));
-        applyCashDelta(cashHolding, cashAdjustment);
-        holdingRepository.update(cashHolding);
+        cashBalanceService.applySharedCashDelta(cashAdjustment);
 
         Transaction updated = transactionRepository.update(normalized);
         recalculateHoldingFromTransactions(normalized.getHoldingId());
@@ -92,10 +92,8 @@ public class TransactionService {
     public int deleteById(int id) {
         Transaction before = requireExistingTransaction(id);
         Holding assetHolding = requireAssetHolding(before.getHoldingId());
-        Holding cashHolding = requireCashHolding(assetHolding.getPortfolioId());
 
-        applyCashDelta(cashHolding, cashDeltaFor(before).negate());
-        holdingRepository.update(cashHolding);
+        cashBalanceService.applySharedCashDelta(cashDeltaFor(before).negate());
 
         int rows = transactionRepository.deleteById(id);
         if (rows > 0) {
@@ -197,13 +195,6 @@ public class TransactionService {
         return holding;
     }
 
-    private Holding requireCashHolding(int portfolioId) {
-        return holdingRepository.getHoldingsByPortfolioId(portfolioId).stream()
-                .filter(h -> h.getAssetType() == AssetType.CASH || (h.getTicker() != null && "CASH".equalsIgnoreCase(h.getTicker())))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("No CASH holding found for portfolio " + portfolioId + ". Please create a CASH holding first."));
-    }
-
     private void ensureSellQuantityValid(Transaction candidate, Integer excludeTxId) {
         if (!TX_SELL.equals(candidate.getType())) {
             return;
@@ -246,16 +237,4 @@ public class TransactionService {
         return TX_SELL.equals(tx.getType()) ? amount : amount.negate();
     }
 
-    private void applyCashDelta(Holding cashHolding, BigDecimal delta) {
-        BigDecimal current = cashHolding.getQuantity() == null ? ZERO : cashHolding.getQuantity();
-        BigDecimal next = current.add(delta);
-        if (next.compareTo(ZERO) < 0) {
-            throw new IllegalArgumentException("Insufficient cash balance. Available: " + current + ", required change: " + delta.abs());
-        }
-        cashHolding.setQuantity(next.setScale(4, RoundingMode.HALF_UP));
-        if (cashHolding.getPurchasePrice() == null || cashHolding.getPurchasePrice().compareTo(ZERO) <= 0) {
-            cashHolding.setPurchasePrice(BigDecimal.ONE);
-        }
-    }
 }
-

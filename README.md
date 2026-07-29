@@ -18,7 +18,11 @@ A Spring Boot portfolio management project with REST APIs and a complete static 
 ## Run the project
 
 ```powershell
-Set-Location "C:\Users\Administrator\IdeaProjects\xian-The-Big-Fourt-Portfolio-Manager"
+Set-Location "C:\path\to\xian-The-Big-Fourt-Portfolio-Manager"
+Set-Item Env:SPRING_DATASOURCE_URL "jdbc:mysql://localhost:3306/portfolio_db?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=UTC"
+Set-Item Env:SPRING_DATASOURCE_USERNAME "root"
+Set-Item Env:SPRING_DATASOURCE_PASSWORD "<your-password>"
+Set-Item Env:ZHIPU_API_KEY "<your-api-key>"
 .\mvnw.cmd spring-boot:run
 ```
 
@@ -29,7 +33,7 @@ Open in browser:
 ## Run tests
 
 ```powershell
-Set-Location "C:\Users\Administrator\IdeaProjects\xian-The-Big-Fourt-Portfolio-Manager"
+Set-Location "C:\path\to\xian-The-Big-Fourt-Portfolio-Manager"
 .\mvnw.cmd test -DskipTests=false
 ```
 
@@ -42,10 +46,10 @@ Set-Location "C:\Users\Administrator\IdeaProjects\xian-The-Big-Fourt-Portfolio-M
 
 ## Environment
 
-The app currently uses MySQL from `src/main/resources/application.properties`.
-Update connection values if needed:
+The app reads sensitive runtime values from environment variables.
+Set these before starting the app if you are not using the defaults:
 
-- `spring.datasource.url`
-- `spring.datasource.username`
-- `spring.datasource.password`
-
+- `SPRING_DATASOURCE_URL`
+- `SPRING_DATASOURCE_USERNAME`
+- `SPRING_DATASOURCE_PASSWORD`
+- `ZHIPU_API_KEY`

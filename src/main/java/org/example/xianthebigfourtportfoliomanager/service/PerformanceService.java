@@ -1,5 +1,6 @@
 package org.example.xianthebigfourtportfoliomanager.service;
 
+import org.example.xianthebigfourtportfoliomanager.entity.AssetType;
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
 import org.example.xianthebigfourtportfoliomanager.entity.priceHistory;
 import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
@@ -26,22 +27,32 @@ public class PerformanceService {
     private final HoldingRepository holdingRepository;
     private final PriceHistoryRepository priceHistoryRepository;
     private final YahooFinanceService yahooFinanceService;
+    private final CashBalanceService cashBalanceService;
 
     public PerformanceService(PortfolioRepository portfolioRepository,
                               HoldingRepository holdingRepository,
                               PriceHistoryRepository priceHistoryRepository,
-                              YahooFinanceService yahooFinanceService) {
+                              YahooFinanceService yahooFinanceService,
+                              CashBalanceService cashBalanceService) {
         this.portfolioRepository = portfolioRepository;
         this.holdingRepository = holdingRepository;
         this.priceHistoryRepository = priceHistoryRepository;
         this.yahooFinanceService = yahooFinanceService;
+        this.cashBalanceService = cashBalanceService;
     }
 
     public PerformanceResult getPerformance(int portfolioId) {
         portfolio portf = portfolioRepository.getPortfolioById(portfolioId);
         if (portf == null) return null;
 
-        List<Holding> holdings = holdingRepository.getHoldingsByPortfolioId(portfolioId);
+        List<Holding> holdings = new ArrayList<>();
+        for (Holding holding : holdingRepository.getHoldingsByPortfolioId(portfolioId)) {
+            if (holding.getAssetType() != AssetType.CASH
+                    && (holding.getTicker() == null || !"CASH".equalsIgnoreCase(holding.getTicker()))) {
+                holdings.add(holding);
+            }
+        }
+        holdings.addAll(cashBalanceService.getSharedCashHoldingsForDisplay());
         BigDecimal totalMarketValue = BigDecimal.ZERO;
         BigDecimal totalCost = BigDecimal.ZERO;
         List<HoldingDetail> details = new ArrayList<>();

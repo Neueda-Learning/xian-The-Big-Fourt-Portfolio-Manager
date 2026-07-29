@@ -86,5 +86,9 @@ public class TransactionRepository {
         String sql = "delete from `transaction` where id = ?";
         return jdbcTemplate.update(sql, id);
     }
-}
 
+    public int reassignHoldingId(int fromHoldingId, int toHoldingId) {
+        String sql = "update `transaction` set holding_id = ? where holding_id = ?";
+        return jdbcTemplate.update(sql, toHoldingId, fromHoldingId);
+    }
+}

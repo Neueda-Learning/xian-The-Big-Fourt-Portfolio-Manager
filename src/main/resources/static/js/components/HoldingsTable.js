@@ -5,6 +5,19 @@ function badgeClass(type) {
     return `badge ${type.toLowerCase()}`;
 }
 
+function renderActions(holding) {
+    if (holding.type === "Cash") {
+        return `<span class="cash-managed-note">Use Cash Balance</span>`;
+    }
+
+    return `
+        <div class="row-actions">
+            <button class="icon-btn small" aria-label="Edit ${holding.ticker}" data-edit-id="${holding.id}">${icons.edit}</button>
+            <button class="icon-btn small" aria-label="Delete ${holding.ticker}" data-delete-id="${holding.id}">${icons.trash}</button>
+        </div>
+    `;
+}
+
 function gainForAsset(holding) {
     const marketValue = holding.quantity * holding.currentPrice;
     const costValue = holding.quantity * holding.avgPrice;
@@ -80,12 +93,7 @@ export function HoldingsTable(holdings, searchTerm, selectedType) {
                                     <td>${formatCurrency(marketValue)}</td>
                                     <td class="${positive ? "positive" : "negative"}">${positive ? formatSignedCurrency(gainValue) : formatSignedCurrency(gainValue)}</td>
                                     <td class="${positive ? "positive" : "negative"}">${formatPercent(gainPct)}</td>
-                                    <td>
-                                        <div class="row-actions">
-                                            <button class="icon-btn small" aria-label="Edit ${holding.ticker}" data-edit-id="${holding.id}">${icons.edit}</button>
-                                            <button class="icon-btn small" aria-label="Delete ${holding.ticker}" data-delete-id="${holding.id}">${icons.trash}</button>
-                                        </div>
-                                    </td>
+                                    <td>${renderActions(holding)}</td>
                                 </tr>
                             `;
                             })

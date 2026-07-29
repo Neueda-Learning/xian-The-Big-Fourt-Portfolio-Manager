@@ -1,4 +1,4 @@
-export function AppLayout({ topNavbar, sidebar, header, summaryCards, charts, holdingsTable, recentTransactions, addAssetModal, confirmDeleteModal }) {
+export function AppLayout({ topNavbar, sidebar, header, summaryCards, charts, holdingsTable, recentTransactions, addAssetModal, confirmDeleteModal, cashActionModal }) {
     return `
         <div class="dashboard-shell">
             ${topNavbar}
@@ -15,5 +15,6 @@ export function AppLayout({ topNavbar, sidebar, header, summaryCards, charts, ho
         </div>
         ${addAssetModal}
         ${confirmDeleteModal}
+        ${cashActionModal}
     `;
 }

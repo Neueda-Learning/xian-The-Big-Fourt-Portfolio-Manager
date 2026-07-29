@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -27,14 +28,26 @@ public class HoldingService {
 
     private final HoldingRepository holdingRepository;
     private final TransactionRepository transactionRepository;
+    private final CashBalanceService cashBalanceService;
 
-    public HoldingService(HoldingRepository holdingRepository, TransactionRepository transactionRepository) {
+    public HoldingService(HoldingRepository holdingRepository,
+                          TransactionRepository transactionRepository,
+                          CashBalanceService cashBalanceService) {
         this.holdingRepository = holdingRepository;
         this.transactionRepository = transactionRepository;
+        this.cashBalanceService = cashBalanceService;
     }
 
     public List<Holding> getHoldingsByPortfolioId(int portfolioId) {
-        return holdingRepository.getHoldingsByPortfolioId(portfolioId);
+        List<Holding> holdings = new ArrayList<>();
+        for (Holding holding : holdingRepository.getHoldingsByPortfolioId(portfolioId)) {
+            if (holding.getAssetType() != AssetType.CASH && !isCashTicker(holding)) {
+                holdings.add(holding);
+            }
+        }
+
+        holdings.addAll(cashBalanceService.getSharedCashHoldingsForDisplay());
+        return holdings;
     }
 
     public Holding getHoldingById(int holdingId) {
@@ -96,25 +109,29 @@ public class HoldingService {
             throw new IllegalArgumentException("Holding not found: " + holding.getId());
         }
 
-        if (existing.getAssetType() != AssetType.CASH) {
-            BigDecimal beforeQty = existing.getQuantity() == null ? ZERO : existing.getQuantity();
-            BigDecimal afterQty = holding.getQuantity() == null ? ZERO : holding.getQuantity();
-            if (afterQty.compareTo(ZERO) < 0) {
-                throw new IllegalArgumentException("Holding quantity cannot be negative.");
-            }
+        if (existing.getAssetType() == AssetType.CASH) {
+            BigDecimal requested = holding.getQuantity() == null ? ZERO : holding.getQuantity();
+            cashBalanceService.setSharedCashBalance(requested);
+            return holdingRepository.getHoldingById(existing.getId());
+        }
 
-            BigDecimal delta = afterQty.subtract(beforeQty);
-            if (delta.compareTo(ZERO) != 0) {
-                BigDecimal price = holding.getPurchasePrice() == null ? ZERO : holding.getPurchasePrice();
-                BigDecimal cashDelta = delta.compareTo(ZERO) > 0
-                        ? delta.multiply(price).negate()
-                        : delta.abs().multiply(price);
-                applyCashChangeForTrade(existing.getPortfolioId(), cashDelta, existing.getId());
-            }
+        BigDecimal beforeQty = existing.getQuantity() == null ? ZERO : existing.getQuantity();
+        BigDecimal afterQty = holding.getQuantity() == null ? ZERO : holding.getQuantity();
+        if (afterQty.compareTo(ZERO) < 0) {
+            throw new IllegalArgumentException("Holding quantity cannot be negative.");
+        }
+
+        BigDecimal delta = afterQty.subtract(beforeQty);
+        if (delta.compareTo(ZERO) != 0) {
+            BigDecimal price = holding.getPurchasePrice() == null ? ZERO : holding.getPurchasePrice();
+            BigDecimal cashDelta = delta.compareTo(ZERO) > 0
+                    ? delta.multiply(price).negate()
+                    : delta.abs().multiply(price);
+            applyCashChangeForTrade(existing.getPortfolioId(), cashDelta, existing.getId());
         }
 
         Holding updated = holdingRepository.update(holding);
-        if (existing.getAssetType() != AssetType.CASH && updated != null) {
+        if (updated != null) {
             syncQuantityDeltaToTransactions(existing, updated);
         }
         return updated;
@@ -190,23 +207,10 @@ public class HoldingService {
         if (portfolioId == null) {
             throw new IllegalArgumentException("portfolioId is required for cash balance validation.");
         }
+        cashBalanceService.applySharedCashDelta(cashDelta);
+    }
 
-        Holding cashHolding = holdingRepository.getHoldingsByPortfolioId(portfolioId).stream()
-                .filter(h -> h.getId() != null && (excludeHoldingId == null || !excludeHoldingId.equals(h.getId())))
-                .filter(h -> h.getAssetType() == AssetType.CASH || (h.getTicker() != null && "CASH".equalsIgnoreCase(h.getTicker())))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("No CASH holding found for portfolio " + portfolioId + ". Please create a CASH holding first."));
-
-        BigDecimal current = cashHolding.getQuantity() == null ? ZERO : cashHolding.getQuantity();
-        BigDecimal next = current.add(cashDelta);
-        if (next.compareTo(ZERO) < 0) {
-            throw new IllegalArgumentException("Insufficient cash balance. Available: " + current + ", required change: " + cashDelta.abs());
-        }
-
-        cashHolding.setQuantity(next.setScale(4, RoundingMode.HALF_UP));
-        if (cashHolding.getPurchasePrice() == null || cashHolding.getPurchasePrice().compareTo(ZERO) <= 0) {
-            cashHolding.setPurchasePrice(BigDecimal.ONE);
-        }
-        holdingRepository.update(cashHolding);
+    private boolean isCashTicker(Holding holding) {
+        return holding.getTicker() != null && "CASH".equalsIgnoreCase(holding.getTicker());
     }
 }
