@@ -50,7 +50,7 @@ public class PortfolioService {
         }
 
         String name = normalizeName(portf.getName());
-        BigDecimal initialCash = normalizeInitialCash(portf.getInitialCash());
+        BigDecimal initialCash = BigDecimal.ZERO;
 
         portf.setName(name);
         portf.setDescription(normalizeDescription(portf.getDescription()));

@@ -81,13 +81,21 @@ public class PerformanceService {
             ));
         }
 
-        BigDecimal cashBalance = portf.getCashBalance() == null ? BigDecimal.ZERO : portf.getCashBalance();
-        BigDecimal initialCash = portf.getInitialCash() == null ? BigDecimal.ZERO : portf.getInitialCash();
-        BigDecimal totalPortfolioValue = cashBalance.add(holdingsMarketValue);
+        portfolio firstPortfolio = portfolioRepository.getPortfolioById(1);
+        BigDecimal cashBalance = (firstPortfolio != null && firstPortfolio.getCashBalance() != null) 
+            ? firstPortfolio.getCashBalance() 
+            : (portf.getCashBalance() == null ? BigDecimal.ZERO : portf.getCashBalance());
 
-        BigDecimal totalReturn = totalPortfolioValue.subtract(initialCash);
-        BigDecimal returnRate = initialCash.compareTo(BigDecimal.ZERO) > 0
-            ? totalReturn.divide(initialCash, 4, RoundingMode.HALF_UP).multiply(new BigDecimal("100"))
+        if (holdingsMarketValue.compareTo(BigDecimal.ZERO) <= 0) {
+            return new PerformanceResult(portfolioId, portf.getName(),
+                null, null, null, null, details, cashBalance, holdingsMarketValue);
+        }
+        BigDecimal initialCash = portf.getInitialCash() == null ? BigDecimal.ZERO : portf.getInitialCash();
+        BigDecimal totalPortfolioValue = totalCost.add(totalCost.compareTo(BigDecimal.ZERO) > 0 ? holdingsMarketValue.subtract(totalCost) : BigDecimal.ZERO);
+
+        BigDecimal totalReturn = holdingsMarketValue.subtract(totalCost);
+        BigDecimal returnRate = totalCost.compareTo(BigDecimal.ZERO) > 0
+            ? totalReturn.divide(totalCost, 4, RoundingMode.HALF_UP).multiply(new BigDecimal("100"))
             : BigDecimal.ZERO;
 
         return new PerformanceResult(portfolioId, portf.getName(),

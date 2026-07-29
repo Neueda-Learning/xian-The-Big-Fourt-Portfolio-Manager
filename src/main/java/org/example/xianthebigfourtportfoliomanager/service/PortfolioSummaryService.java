@@ -37,6 +37,21 @@ public class PortfolioSummaryService {
 
         DayChange dayChange = computeDayChange(portfolioId);
 
+        if (perf.getTotalMarketValue() == null) {
+            return new PortfolioSummaryResponse(
+                    perf.getPortfolioId(),
+                    perf.getPortfolioName(),
+                    null,
+                    null,
+                    null,
+                    defaultZero(perf.getCashBalance()),
+                    null,
+                    null,
+                    false,
+                    allocation
+            );
+        }
+
         return new PortfolioSummaryResponse(
                 perf.getPortfolioId(),
                 perf.getPortfolioName(),

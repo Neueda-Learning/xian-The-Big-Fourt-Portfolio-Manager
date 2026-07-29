@@ -98,8 +98,10 @@ public class TransactionService {
 
         portfolio portf = requirePortfolio(portfolioId);
         BigDecimal amount = request.getAmount().setScale(4, RoundingMode.HALF_UP);
-        BigDecimal currentCash = portf.getCashBalance() == null ? ZERO : portf.getCashBalance();
-        BigDecimal currentInitial = portf.getInitialCash() == null ? ZERO : portf.getInitialCash();
+        
+        portfolio firstPortfolio = requirePortfolio(1);
+        BigDecimal currentCash = firstPortfolio.getCashBalance() == null ? ZERO : firstPortfolio.getCashBalance();
+        BigDecimal currentInitial = firstPortfolio.getInitialCash() == null ? ZERO : firstPortfolio.getInitialCash();
         BigDecimal nextCash = currentCash.add(amount).setScale(4, RoundingMode.HALF_UP);
         BigDecimal nextInitial = currentInitial.add(amount).setScale(4, RoundingMode.HALF_UP);
 
@@ -111,7 +113,7 @@ public class TransactionService {
         tx.setPrice(ONE.setScale(4, RoundingMode.HALF_UP));
         tx.setTradeDate(request.getTradeDate() == null ? LocalDateTime.now() : request.getTradeDate());
 
-        portfolioRepository.updateInitialCashAndBalance(portfolioId, nextInitial, nextCash);
+        portfolioRepository.updateInitialCashAndBalance(firstPortfolio.getId(), nextInitial, nextCash);
         Transaction saved = transactionRepository.save(tx);
         portfolioSnapshotService.captureToday(portfolioId);
         return saved;
@@ -125,8 +127,10 @@ public class TransactionService {
         normalized.setPortfolioId(portf.getId());
 
         ensureSellQuantityValid(normalized, null);
-        applyCashDelta(portf, cashDeltaFor(normalized));
-        portfolioRepository.updateCashBalance(portf.getId(), portf.getCashBalance());
+        
+        portfolio firstPortfolio = requirePortfolio(1);
+        applyCashDelta(firstPortfolio, cashDeltaFor(normalized));
+        portfolioRepository.updateCashBalance(firstPortfolio.getId(), firstPortfolio.getCashBalance());
 
         Transaction saved = transactionRepository.save(normalized);
         recalculateHoldingFromTransactions(normalized.getHoldingId());
@@ -153,9 +157,10 @@ public class TransactionService {
 
         ensureSellQuantityValid(normalized, before.getId());
 
+        portfolio firstPortfolio = requirePortfolio(1);
         BigDecimal cashAdjustment = cashDeltaFor(normalized).subtract(cashDeltaFor(before));
-        applyCashDelta(portf, cashAdjustment);
-        portfolioRepository.updateCashBalance(portf.getId(), portf.getCashBalance());
+        applyCashDelta(firstPortfolio, cashAdjustment);
+        portfolioRepository.updateCashBalance(firstPortfolio.getId(), firstPortfolio.getCashBalance());
 
         Transaction updated = transactionRepository.update(normalized);
         recalculateHoldingFromTransactions(normalized.getHoldingId());
@@ -170,8 +175,9 @@ public class TransactionService {
         Holding assetHolding = requireAssetHolding(before.getHoldingId());
         portfolio portf = requirePortfolio(assetHolding.getPortfolioId());
 
-        applyCashDelta(portf, cashDeltaFor(before).negate());
-        portfolioRepository.updateCashBalance(portf.getId(), portf.getCashBalance());
+        portfolio firstPortfolio = requirePortfolio(1);
+        applyCashDelta(firstPortfolio, cashDeltaFor(before).negate());
+        portfolioRepository.updateCashBalance(firstPortfolio.getId(), firstPortfolio.getCashBalance());
 
         int rows = transactionRepository.deleteById(id);
         if (rows > 0) {
