@@ -1,4 +1,4 @@
-import { formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "../utils/formatters.js";
+import { formatCurrency, formatSignedCurrency, toInputSafeText } from "../utils/formatters.js";
 import { icons } from "./icons.js";
 
 function badgeClass(type) {
@@ -8,9 +8,10 @@ function badgeClass(type) {
 function gainForAsset(holding) {
     const marketValue = holding.quantity * holding.currentPrice;
     const costValue = holding.quantity * holding.avgPrice;
-    const gainValue = marketValue - costValue;
-    const gainPct = costValue > 0 ? (gainValue / costValue) * 100 : 0;
-    return { marketValue, gainValue, gainPct };
+    const realizedPnl = Number(holding.realizedPnl ?? 0);
+    const unrealizedPnl = Number(holding.unrealizedPnl ?? (marketValue - costValue));
+    const totalPnl = Number(holding.totalPnl ?? (realizedPnl + unrealizedPnl));
+    return { marketValue, realizedPnl, unrealizedPnl, totalPnl };
 }
 
 export function HoldingsTable(holdings, searchTerm, selectedType) {
@@ -52,16 +53,20 @@ export function HoldingsTable(holdings, searchTerm, selectedType) {
                             <th>Avg. Price</th>
                             <th>Current Price</th>
                             <th>Market Value</th>
-                            <th>Gain / Loss</th>
-                            <th>Gain %</th>
+                            <th>Realized P/L</th>
+                            <th>Unrealized P/L</th>
+                            <th>Total P/L</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${filtered
                             .map((holding) => {
-                                const { marketValue, gainValue, gainPct } = gainForAsset(holding);
-                                const positive = gainValue >= 0;
+                                const { marketValue, realizedPnl, unrealizedPnl, totalPnl } = gainForAsset(holding);
+                                const realizedPositive = realizedPnl >= 0;
+                                const unrealizedPositive = unrealizedPnl >= 0;
+                                const totalPositive = totalPnl >= 0;
+                                const cashRow = holding.type === "Cash";
                                 return `
                                 <tr>
                                     <td>
@@ -78,13 +83,16 @@ export function HoldingsTable(holdings, searchTerm, selectedType) {
                                     <td>${formatCurrency(holding.avgPrice)}</td>
                                     <td>${formatCurrency(holding.currentPrice)}</td>
                                     <td>${formatCurrency(marketValue)}</td>
-                                    <td class="${positive ? "positive" : "negative"}">${positive ? formatSignedCurrency(gainValue) : formatSignedCurrency(gainValue)}</td>
-                                    <td class="${positive ? "positive" : "negative"}">${formatPercent(gainPct)}</td>
+                                    <td class="${realizedPositive ? "positive" : "negative"}">${formatSignedCurrency(realizedPnl)}</td>
+                                    <td class="${unrealizedPositive ? "positive" : "negative"}">${formatSignedCurrency(unrealizedPnl)}</td>
+                                    <td class="${totalPositive ? "positive" : "negative"}">${formatSignedCurrency(totalPnl)}</td>
                                     <td>
                                         <div class="row-actions">
-                                            <button class="icon-btn small" aria-label="Buy more ${holding.ticker}" data-buy-id="${holding.id}" title="Buy More">${icons.plus}</button>
-                                            <button class="icon-btn small" aria-label="Sell ${holding.ticker}" data-sell-id="${holding.id}" title="Sell">${icons.transactions}</button>
-                                            <button class="icon-btn small" aria-label="Update price for ${holding.ticker}" data-edit-id="${holding.id}">${icons.edit}</button>
+                                            ${cashRow ? "<span>-</span>" : `
+                                                <button class="icon-btn small" aria-label="Buy more ${holding.ticker}" data-buy-id="${holding.id}" title="Buy More">${icons.plus}</button>
+                                                <button class="icon-btn small" aria-label="Sell ${holding.ticker}" data-sell-id="${holding.id}" title="Sell">${icons.transactions}</button>
+                                                <button class="icon-btn small" aria-label="Update price for ${holding.ticker}" data-edit-id="${holding.id}">${icons.edit}</button>
+                                            `}
                                         </div>
                                     </td>
                                 </tr>

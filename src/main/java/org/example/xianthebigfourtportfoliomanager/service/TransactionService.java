@@ -1,6 +1,7 @@
 package org.example.xianthebigfourtportfoliomanager.service;
 
 import org.example.xianthebigfourtportfoliomanager.entity.AssetType;
+import org.example.xianthebigfourtportfoliomanager.entity.CashDepositRequest;
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
 import org.example.xianthebigfourtportfoliomanager.entity.Transaction;
 import org.example.xianthebigfourtportfoliomanager.entity.TradeRequest;
@@ -29,8 +30,10 @@ public class TransactionService {
      */
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
+    private static final BigDecimal ONE = BigDecimal.ONE;
     private static final String TX_BUY = "BUY";
     private static final String TX_SELL = "SELL";
+    private static final String TX_CASH_IN = "IN";
 
     private final TransactionRepository transactionRepository;
     private final HoldingRepository holdingRepository;
@@ -88,10 +91,38 @@ public class TransactionService {
     }
 
     @Transactional
+    public Transaction depositCash(int portfolioId, CashDepositRequest request) {
+        if (request == null || request.getAmount() == null || request.getAmount().compareTo(ZERO) <= 0) {
+            throw new IllegalArgumentException("Deposit amount must be greater than 0.");
+        }
+
+        portfolio portf = requirePortfolio(portfolioId);
+        BigDecimal amount = request.getAmount().setScale(4, RoundingMode.HALF_UP);
+        BigDecimal currentCash = portf.getCashBalance() == null ? ZERO : portf.getCashBalance();
+        BigDecimal currentInitial = portf.getInitialCash() == null ? ZERO : portf.getInitialCash();
+        BigDecimal nextCash = currentCash.add(amount).setScale(4, RoundingMode.HALF_UP);
+        BigDecimal nextInitial = currentInitial.add(amount).setScale(4, RoundingMode.HALF_UP);
+
+        Transaction tx = new Transaction();
+        tx.setPortfolioId(portfolioId);
+        tx.setHoldingId(null);
+        tx.setType(TX_CASH_IN);
+        tx.setQuantity(amount);
+        tx.setPrice(ONE.setScale(4, RoundingMode.HALF_UP));
+        tx.setTradeDate(request.getTradeDate() == null ? LocalDateTime.now() : request.getTradeDate());
+
+        portfolioRepository.updateInitialCashAndBalance(portfolioId, nextInitial, nextCash);
+        Transaction saved = transactionRepository.save(tx);
+        portfolioSnapshotService.captureToday(portfolioId);
+        return saved;
+    }
+
+    @Transactional
     public Transaction create(Transaction transaction) {
         Transaction normalized = normalizeTransaction(transaction);
         Holding assetHolding = requireAssetHolding(normalized.getHoldingId());
         portfolio portf = requirePortfolio(assetHolding.getPortfolioId());
+        normalized.setPortfolioId(portf.getId());
 
         ensureSellQuantityValid(normalized, null);
         applyCashDelta(portf, cashDeltaFor(normalized));
@@ -226,6 +257,7 @@ public class TransactionService {
 
     private Transaction toTransaction(TradeRequest request, Integer holdingId, String type) {
         Transaction tx = new Transaction();
+        tx.setPortfolioId(null);
         tx.setHoldingId(holdingId);
         tx.setType(type);
         tx.setQuantity(request.getQuantity());

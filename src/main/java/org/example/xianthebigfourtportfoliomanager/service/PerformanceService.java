@@ -1,17 +1,22 @@
 package org.example.xianthebigfourtportfoliomanager.service;
 
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
+import org.example.xianthebigfourtportfoliomanager.entity.Transaction;
 import org.example.xianthebigfourtportfoliomanager.entity.priceHistory;
 import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
 import org.example.xianthebigfourtportfoliomanager.repository.HoldingRepository;
 import org.example.xianthebigfourtportfoliomanager.repository.PriceHistoryRepository;
 import org.example.xianthebigfourtportfoliomanager.repository.PortfolioRepository;
+import org.example.xianthebigfourtportfoliomanager.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @Service
@@ -26,13 +31,16 @@ public class PerformanceService {
     private final PortfolioRepository portfolioRepository;
     private final HoldingRepository holdingRepository;
     private final PriceHistoryRepository priceHistoryRepository;
+    private final TransactionRepository transactionRepository;
 
     public PerformanceService(PortfolioRepository portfolioRepository,
                               HoldingRepository holdingRepository,
-                              PriceHistoryRepository priceHistoryRepository) {
+                              PriceHistoryRepository priceHistoryRepository,
+                              TransactionRepository transactionRepository) {
         this.portfolioRepository = portfolioRepository;
         this.holdingRepository = holdingRepository;
         this.priceHistoryRepository = priceHistoryRepository;
+        this.transactionRepository = transactionRepository;
     }
 
     public PerformanceResult getPerformance(int portfolioId) {
@@ -40,6 +48,7 @@ public class PerformanceService {
         if (portf == null) return null;
 
         List<Holding> holdings = holdingRepository.getHoldingsByPortfolioId(portfolioId);
+        Map<Integer, List<Transaction>> transactionsByHolding = buildTransactionsByHolding(portfolioId);
         BigDecimal holdingsMarketValue = BigDecimal.ZERO;
         BigDecimal totalCost = BigDecimal.ZERO;
         List<HoldingDetail> details = new ArrayList<>();
@@ -58,13 +67,17 @@ public class PerformanceService {
             BigDecimal cost = h.getQuantity().multiply(
                 h.getAveragePrice() != null ? h.getAveragePrice() : BigDecimal.ZERO
             );
+            HoldingPnl pnl = computeHoldingPnl(transactionsByHolding.get(h.getId()), cost, marketValue);
             holdingsMarketValue = holdingsMarketValue.add(marketValue);
             totalCost = totalCost.add(cost);
 
             details.add(new HoldingDetail(
                 h.getId(), h.getTicker(), h.getAssetType().name(),
                 h.getQuantity(), h.getAveragePrice(), currentPrice,
-                marketValue, cost
+                marketValue, cost,
+                pnl.realizedPnl,
+                pnl.unrealizedPnl,
+                pnl.totalPnl
             ));
         }
 
@@ -101,6 +114,76 @@ public class PerformanceService {
         }
 
         return null;
+    }
+
+    private Map<Integer, List<Transaction>> buildTransactionsByHolding(int portfolioId) {
+        List<Transaction> transactions = transactionRepository.getTransactionsByPortfolioId(portfolioId);
+        Map<Integer, List<Transaction>> byHolding = new HashMap<>();
+        for (Transaction tx : transactions) {
+            if (tx == null || tx.getHoldingId() == null) {
+                continue;
+            }
+            byHolding.computeIfAbsent(tx.getHoldingId(), key -> new ArrayList<>()).add(tx);
+        }
+
+        for (List<Transaction> txList : byHolding.values()) {
+            txList.sort(Comparator
+                    .comparing(Transaction::getTradeDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(tx -> tx.getId() == null ? Integer.MAX_VALUE : tx.getId()));
+        }
+
+        return byHolding;
+    }
+
+    private HoldingPnl computeHoldingPnl(List<Transaction> transactions, BigDecimal currentCost, BigDecimal marketValue) {
+        BigDecimal realized = BigDecimal.ZERO;
+        BigDecimal openQty = BigDecimal.ZERO;
+        BigDecimal openCostPool = BigDecimal.ZERO;
+
+        if (transactions != null) {
+            for (Transaction tx : transactions) {
+                if (tx == null || tx.getQuantity() == null || tx.getPrice() == null || tx.getType() == null) {
+                    continue;
+                }
+
+                String type = tx.getType().trim().toUpperCase();
+                BigDecimal qty = tx.getQuantity().max(BigDecimal.ZERO);
+                BigDecimal price = tx.getPrice().max(BigDecimal.ZERO);
+
+                if ("BUY".equals(type)) {
+                    openQty = openQty.add(qty);
+                    openCostPool = openCostPool.add(qty.multiply(price));
+                } else if ("SELL".equals(type)) {
+                    if (openQty.compareTo(BigDecimal.ZERO) <= 0) {
+                        continue;
+                    }
+
+                    BigDecimal sellQty = qty.min(openQty);
+                    if (sellQty.compareTo(BigDecimal.ZERO) <= 0) {
+                        continue;
+                    }
+
+                    BigDecimal avgCost = openCostPool.divide(openQty, 8, RoundingMode.HALF_UP);
+                    BigDecimal sellPnl = price.subtract(avgCost).multiply(sellQty);
+                    realized = realized.add(sellPnl);
+
+                    openQty = openQty.subtract(sellQty);
+                    openCostPool = openCostPool.subtract(avgCost.multiply(sellQty));
+                }
+            }
+        }
+
+        BigDecimal unrealized = marketValue.subtract(currentCost);
+        BigDecimal total = realized.add(unrealized);
+
+        return new HoldingPnl(
+                realized.setScale(4, RoundingMode.HALF_UP),
+                unrealized.setScale(4, RoundingMode.HALF_UP),
+                total.setScale(4, RoundingMode.HALF_UP)
+        );
+    }
+
+    private record HoldingPnl(BigDecimal realizedPnl, BigDecimal unrealizedPnl, BigDecimal totalPnl) {
     }
 
     public static class PerformanceResult {
@@ -162,12 +245,16 @@ public class PerformanceService {
         private BigDecimal currentPrice;
         private BigDecimal marketValue;
         private BigDecimal cost;
+        private BigDecimal realizedPnl;
+        private BigDecimal unrealizedPnl;
+        private BigDecimal totalPnl;
 
         public HoldingDetail() {}
 
         public HoldingDetail(int holdingId, String ticker, String assetType,
                              BigDecimal quantity, BigDecimal averagePrice, BigDecimal currentPrice,
-                             BigDecimal marketValue, BigDecimal cost) {
+                             BigDecimal marketValue, BigDecimal cost,
+                             BigDecimal realizedPnl, BigDecimal unrealizedPnl, BigDecimal totalPnl) {
             this.holdingId = holdingId;
             this.ticker = ticker;
             this.assetType = assetType;
@@ -176,6 +263,9 @@ public class PerformanceService {
             this.currentPrice = currentPrice;
             this.marketValue = marketValue;
             this.cost = cost;
+            this.realizedPnl = realizedPnl;
+            this.unrealizedPnl = unrealizedPnl;
+            this.totalPnl = totalPnl;
         }
 
         public int getHoldingId() { return holdingId; }
@@ -194,5 +284,11 @@ public class PerformanceService {
         public void setMarketValue(BigDecimal marketValue) { this.marketValue = marketValue; }
         public BigDecimal getCost() { return cost; }
         public void setCost(BigDecimal cost) { this.cost = cost; }
+        public BigDecimal getRealizedPnl() { return realizedPnl; }
+        public void setRealizedPnl(BigDecimal realizedPnl) { this.realizedPnl = realizedPnl; }
+        public BigDecimal getUnrealizedPnl() { return unrealizedPnl; }
+        public void setUnrealizedPnl(BigDecimal unrealizedPnl) { this.unrealizedPnl = unrealizedPnl; }
+        public BigDecimal getTotalPnl() { return totalPnl; }
+        public void setTotalPnl(BigDecimal totalPnl) { this.totalPnl = totalPnl; }
     }
 }
