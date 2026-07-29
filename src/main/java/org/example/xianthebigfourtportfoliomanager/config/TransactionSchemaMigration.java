@@ -1,11 +1,13 @@
 package org.example.xianthebigfourtportfoliomanager.config;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
 
 @Component
+@DependsOn("databaseBootstrapInitializer")
 public class TransactionSchemaMigration {
 
     private final JdbcTemplate jdbcTemplate;
