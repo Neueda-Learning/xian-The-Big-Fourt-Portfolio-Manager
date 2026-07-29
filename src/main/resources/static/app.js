@@ -8,7 +8,6 @@ import { AssetAllocationChart } from "./js/components/AssetAllocationChart.js";
 import { HoldingsTable } from "./js/components/HoldingsTable.js";
 import { RecentTransactions } from "./js/components/RecentTransactions.js";
 import { AddAssetModal } from "./js/components/AddAssetModal.js";
-import { ConfirmDeleteModal } from "./js/components/ConfirmDeleteModal.js";
 import { icons } from "./js/components/icons.js";
 import { generatePerformanceData } from "./js/data/mockData.js";
 import { compactDate, formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "./js/utils/formatters.js";
@@ -33,7 +32,6 @@ const state = {
     selectedRange: "1Y",
     addModalOpen: false,
     editingAssetId: null,
-    deleteTargetId: null,
     sidebarOpen: false,
     activeNav: "Dashboard",
     darkMode: savedTheme === "dark",
@@ -363,13 +361,6 @@ function getEditingAsset() {
     return state.holdings.find((holding) => Number(holding.id) === Number(state.editingAssetId)) || null;
 }
 
-function getDeleteTargetAsset() {
-    if (!state.deleteTargetId) {
-        return null;
-    }
-    return state.holdings.find((holding) => Number(holding.id) === Number(state.deleteTargetId)) || null;
-}
-
 function getViewConfig(metrics) {
     const defaults = {
         title: "Dashboard",
@@ -697,7 +688,7 @@ function render() {
         holdingsTable: holdingsMarkup,
         recentTransactions: transactionsMarkup,
         addAssetModal: AddAssetModal(state.addModalOpen, getEditingAsset()),
-        confirmDeleteModal: ConfirmDeleteModal(getDeleteTargetAsset())
+        confirmDeleteModal: ""
     });
 
     document.body.classList.toggle("sidebar-open", state.sidebarOpen);
@@ -1003,9 +994,8 @@ function bindEvents() {
     const addAssetBtn = document.getElementById("add-asset-btn");
     if (addAssetBtn) {
         addAssetBtn.addEventListener("click", () => {
-            lastFocusedElement = document.activeElement;
-            state.addModalOpen = true;
-            state.editingAssetId = null;
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Use BUY/SELL transactions to change positions and cash.";
             render();
         });
     }
@@ -1026,14 +1016,6 @@ function bindEvents() {
         });
     }
 
-    document.querySelectorAll("[data-delete-id]").forEach((button) => {
-        button.addEventListener("click", () => {
-            lastFocusedElement = document.activeElement;
-            state.deleteTargetId = Number(button.dataset.deleteId);
-            render();
-        });
-    });
-
     document.querySelectorAll("[data-edit-id]").forEach((button) => {
         button.addEventListener("click", () => {
             lastFocusedElement = document.activeElement;
@@ -1044,7 +1026,6 @@ function bindEvents() {
     });
 
     bindAddAssetModalEvents();
-    bindDeleteModalEvents();
     bindModalKeyboardEscape();
 }
 
@@ -1068,45 +1049,26 @@ function bindAddAssetModalEvents() {
 
     form?.addEventListener("submit", async (event) => {
         event.preventDefault();
+        if (!state.editingAssetId) {
+            closeAddAssetModal();
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Use BUY/SELL in Transaction Manager to change positions.";
+            render();
+            return;
+        }
+
         const formData = new FormData(form);
-        const ticker = String(formData.get("ticker") || "").trim().toUpperCase();
-        const name = String(formData.get("name") || "").trim();
-        const type = String(formData.get("type") || "Stock");
-        const quantity = Number(formData.get("quantity"));
         const price = Number(formData.get("price"));
-
-        if (!ticker || !name) {
-            error.textContent = "Ticker and asset name are required.";
+        if (!(price > 0)) {
+            error.textContent = "Current price must be greater than 0.";
             return;
         }
-        if (!(quantity > 0) || !(price >= 0)) {
-            error.textContent = "Quantity must be positive and price cannot be negative.";
-            return;
-        }
-
-        const enumType = type.toUpperCase();
-        const payload = {
-            portfolioId: state.selectedPortfolioId,
-            assetType: enumType,
-            ticker: enumType === "CASH" ? "CASH" : ticker,
-            quantity,
-            purchasePrice: price,
-            purchasedata: new Date().toISOString().slice(0, 10),
-            currency: "USD"
-        };
 
         try {
-            if (state.editingAssetId) {
-                await apiRequest(`/holding/${state.editingAssetId}`, {
-                    method: "PATCH",
-                    body: JSON.stringify(payload)
-                });
-            } else {
-                await apiRequest("/saveholding", {
-                    method: "POST",
-                    body: JSON.stringify(payload)
-                });
-            }
+            const query = `currentPrice=${encodeURIComponent(price.toFixed(4))}`;
+            await apiRequest(`/holding/${state.editingAssetId}/price?${query}`, {
+                method: "PATCH"
+            });
 
             state.globalError = "";
             closeAddAssetModal();
@@ -1123,58 +1085,12 @@ function bindAddAssetModalEvents() {
     });
 }
 
-function bindDeleteModalEvents() {
-    const modal = document.getElementById("confirm-delete-modal");
-    if (!modal) {
-        return;
-    }
-
-    const cancelButton = document.getElementById("cancel-delete-asset");
-    const confirmButton = document.getElementById("confirm-delete-asset");
-
-    cancelButton?.addEventListener("click", () => closeDeleteModal());
-
-    confirmButton?.addEventListener("click", async () => {
-        if (!state.deleteTargetId) {
-            return;
-        }
-        try {
-            await apiRequest(`/delete/holding/${state.deleteTargetId}`, { method: "DELETE" });
-            state.deleteTargetId = null;
-            state.loading = true;
-            render();
-            await refreshPortfolioData();
-            state.loading = false;
-            render();
-            restoreFocus();
-        } catch (error) {
-            state.globalError = error.message;
-            state.deleteTargetId = null;
-            render();
-        }
-    });
-
-    modal.addEventListener("click", (event) => {
-        if (event.target.id === "confirm-delete-modal") {
-            closeDeleteModal();
-        }
-    });
-}
-
 function bindModalKeyboardEscape() {
     if (escapeHandlerBound) {
         return;
     }
 
     document.addEventListener("click", (event) => {
-        const deleteBtn = event.target.closest("[data-delete-id]");
-        if (deleteBtn) {
-            lastFocusedElement = document.activeElement;
-            state.deleteTargetId = Number(deleteBtn.dataset.deleteId);
-            render();
-            return;
-        }
-
         const editBtn = event.target.closest("[data-edit-id]");
         if (editBtn) {
             lastFocusedElement = document.activeElement;
@@ -1188,8 +1104,6 @@ function bindModalKeyboardEscape() {
         if (event.key === "Escape") {
             if (state.addModalOpen) {
                 closeAddAssetModal();
-            } else if (state.deleteTargetId) {
-                closeDeleteModal();
             }
         }
     });
@@ -1200,12 +1114,6 @@ function bindModalKeyboardEscape() {
 function closeAddAssetModal() {
     state.addModalOpen = false;
     state.editingAssetId = null;
-    render();
-    restoreFocus();
-}
-
-function closeDeleteModal() {
-    state.deleteTargetId = null;
     render();
     restoreFocus();
 }
