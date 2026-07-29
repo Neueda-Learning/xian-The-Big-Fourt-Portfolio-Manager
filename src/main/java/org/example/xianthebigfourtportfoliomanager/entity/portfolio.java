@@ -3,13 +3,16 @@ package org.example.xianthebigfourtportfoliomanager.entity;
 import java.time.LocalDateTime;
 
 public class portfolio {
-    private int id;
+    private Integer id;
     private String name;
     private String description;
     private LocalDateTime createAt;
     private LocalDateTime uodataAt;
 
-    public portfolio(int id, String name, String description, LocalDateTime createAt, LocalDateTime uodataAt) {
+    public portfolio() {
+    }
+
+    public portfolio(Integer id, String name, String description, LocalDateTime createAt, LocalDateTime uodataAt) {
         this.id = id;
         this.name = name;
         this.description = description;
@@ -17,7 +20,7 @@ public class portfolio {
         this.uodataAt = uodataAt;
     }
 
-    public int getId() {
+    public Integer getId() {
         return id;
     }
 
@@ -37,7 +40,7 @@ public class portfolio {
         return uodataAt;
     }
 
-    public void setId(int id) {
+    public void setId(Integer id) {
         this.id = id;
     }
 

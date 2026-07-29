@@ -1,7 +1,7 @@
 package org.example.xianthebigfourtportfoliomanager.controller;
 
 import org.example.xianthebigfourtportfoliomanager.entity.Transaction;
-import org.example.xianthebigfourtportfoliomanager.repository.TransactionRepository;
+import org.example.xianthebigfourtportfoliomanager.service.TransactionService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -9,25 +9,31 @@ import java.util.List;
 @RestController
 public class TransactionController {
 
-    private final TransactionRepository repository;
+    /**
+     * Eren issue: transaction APIs bypassed business rules, allowing state drift with holdings and cash.
+     * Fix: delegate transaction CRUD to TransactionService to enforce cash constraints and holding recalculation.
+     * Reviewer: GitHub Copilot (GPT-5.3-Codex).
+     */
 
-    public TransactionController(TransactionRepository repository) {
-        this.repository = repository;
+    private final TransactionService service;
+
+    public TransactionController(TransactionService service) {
+        this.service = service;
     }
 
     @GetMapping("/transaction/{id}")
     public Transaction getTransaction(@PathVariable int id) {
-        return repository.getTransactionById(id);
+        return service.getTransactionById(id);
     }
 
     @GetMapping("/transactions/holding/{holdingId}")
     public List<Transaction> getByHoldingId(@PathVariable int holdingId) {
-        return repository.getTransactionsByHoldingId(holdingId);
+        return service.getTransactionsByHoldingId(holdingId);
     }
 
     @PostMapping("/savetransaction")
     public String addTransaction(@RequestBody Transaction transaction) {
-        Transaction saved = repository.save(transaction);
+        Transaction saved = service.create(transaction);
         if (saved != null) {
             return "Record added successfully!";
         } else {
@@ -38,7 +44,7 @@ public class TransactionController {
     @PatchMapping("/transaction/{id}")
     public String updateTransaction(@PathVariable int id, @RequestBody Transaction transaction) {
         transaction.setId(id);
-        Transaction updated = repository.update(transaction);
+        Transaction updated = service.update(transaction);
         if (updated != null) {
             return "Record has been updated";
         } else {
@@ -48,7 +54,7 @@ public class TransactionController {
 
     @DeleteMapping("/delete/transaction/{id}")
     public String deleteTransaction(@PathVariable int id) {
-        int row = repository.deleteById(id);
+        int row = service.deleteById(id);
         if (row == 1) {
             return "Delete successful " + id;
         } else {

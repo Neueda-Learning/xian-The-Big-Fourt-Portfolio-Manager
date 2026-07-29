@@ -5,8 +5,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public class Holding {
-    private int id;
-    private int portfolioId;
+    private Integer id;
+    private Integer portfolioId;
     private AssetType assetType;
     private String ticker;
     private BigDecimal quantity;
@@ -16,7 +16,10 @@ public class Holding {
     private LocalDateTime createAt;
     private LocalDateTime updataAt;
 
-    public Holding(int id, int portfolioId, AssetType assetType, String ticker, BigDecimal quantity, BigDecimal purchasePrice, LocalDate purchasedata, String currency, LocalDateTime createAt, LocalDateTime updataAt) {
+    public Holding() {
+    }
+
+    public Holding(Integer id, Integer portfolioId, AssetType assetType, String ticker, BigDecimal quantity, BigDecimal purchasePrice, LocalDate purchasedata, String currency, LocalDateTime createAt, LocalDateTime updataAt) {
         this.id = id;
         this.portfolioId = portfolioId;
         this.assetType = assetType;
@@ -29,11 +32,11 @@ public class Holding {
         this.updataAt = updataAt;
     }
 
-    public int getId() {
+    public Integer getId() {
         return id;
     }
 
-    public int getPortfolioId() {
+    public Integer getPortfolioId() {
         return portfolioId;
     }
 
@@ -69,11 +72,11 @@ public class Holding {
         return updataAt;
     }
 
-    public void setId(int id) {
+    public void setId(Integer id) {
         this.id = id;
     }
 
-    public void setPortfolioId(int portfolioId) {
+    public void setPortfolioId(Integer portfolioId) {
         this.portfolioId = portfolioId;
     }
 

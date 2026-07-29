@@ -17,11 +17,6 @@ public class PriceHistoryController {
         this.repository = repository;
     }
 
-    @GetMapping("/prices/all")
-    public List<priceHistory> getAllPrices() {
-        return repository.getAllPrices();
-    }
-
     @GetMapping("/price/{ticker}/{date}")
     public priceHistory getPriceByDate(
             @PathVariable String ticker,
