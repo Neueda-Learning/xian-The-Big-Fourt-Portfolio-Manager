@@ -670,6 +670,11 @@ th {
     background: #fdecec;
 }
 
+.badge.deposit {
+    color: #1d4ed8;
+    background: #eaf1ff;
+}
+
 .positive {
     color: var(--green);
 }

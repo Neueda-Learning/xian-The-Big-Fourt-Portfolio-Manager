@@ -33,11 +33,13 @@ CREATE TABLE IF NOT EXISTS holding (
 
 CREATE TABLE IF NOT EXISTS `transaction` (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    holding_id INT NOT NULL,
+    portfolio_id INT NOT NULL,
+    holding_id INT,
     type VARCHAR(4) NOT NULL,
     quantity DECIMAL(18,4) NOT NULL,
     price DECIMAL(18,4) NOT NULL,
     trade_date TIMESTAMP NOT NULL,
+    FOREIGN KEY (portfolio_id) REFERENCES portfolio(id) ON DELETE CASCADE,
     FOREIGN KEY (holding_id) REFERENCES holding(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 

@@ -89,17 +89,22 @@ function normalizeHolding(rawHolding, detailMap) {
         quantity: Number(rawHolding.quantity || 0),
         avgPrice: Number(rawHolding.averagePrice || 0),
         currentPrice: Number(detail?.currentPrice || rawHolding.currentPrice || 0),
+        realizedPnl: Number(detail?.realizedPnl || 0),
+        unrealizedPnl: Number(detail?.unrealizedPnl || 0),
+        totalPnl: Number(detail?.totalPnl || 0),
         currency: rawHolding.currency || "USD",
         purchasedata: rawHolding.purchasedata
     };
 }
 
 function normalizeTransaction(rawTx, holdingMap) {
-    const holdingTicker = holdingMap.get(rawTx.holdingId)?.ticker || `Holding-${rawTx.holdingId}`;
+    const isCashTx = rawTx.holdingId == null;
+    const holdingTicker = isCashTx ? "CASH" : (holdingMap.get(rawTx.holdingId)?.ticker || `Holding-${rawTx.holdingId}`);
     const txType = String(rawTx.type || "BUY").toUpperCase();
     const quantity = Number(rawTx.quantity || 0);
     const price = Number(rawTx.price || 0);
-    const amount = txType === "SELL" ? quantity * price : -(quantity * price);
+    const amount = txType === "SELL" || txType === "IN" ? quantity * price : -(quantity * price);
+    const action = txType === "SELL" ? "Sell" : txType === "IN" ? "Deposit" : "Buy";
 
     return {
         id: rawTx.id,
@@ -110,9 +115,9 @@ function normalizeTransaction(rawTx, holdingMap) {
             year: "numeric"
         }).format(new Date(rawTx.tradeDate)),
         dateRaw: rawTx.tradeDate,
-        type: holdingMap.get(rawTx.holdingId)?.type || "Stock",
+        type: isCashTx ? "Cash" : (holdingMap.get(rawTx.holdingId)?.type || "Stock"),
         asset: holdingTicker,
-        action: txType === "SELL" ? "Sell" : "Buy",
+        action,
         txType,
         quantity,
         price,
@@ -128,17 +133,18 @@ function rebuildAllocationData() {
     }
 
     const colorMap = {
-        Stock: "#3b82f6",
-        Bond: "#22c55e",
-        Cash: "#f59e0b"
+        STOCK: "#1d4ed8",
+        BOND: "#059669",
+        CASH: "#d97706"
     };
 
     state.allocationData = allocation.map((item) => {
-        const label = String(item.assetType || "Other");
+        const key = String(item.assetType || "OTHER").toUpperCase();
+        const label = key.charAt(0) + key.slice(1).toLowerCase();
         return {
             label: `${label}s`,
             value: Number(item.percentage || 0),
-            color: colorMap[label] || "#8b5cf6"
+            color: colorMap[key] || "#6b7280"
         };
     });
 }
@@ -196,9 +202,10 @@ async function refreshPortfolioData() {
     state.performance = await apiRequest(`/portfolio/${state.selectedPortfolioId}/performance`);
     state.summary = await apiRequest(`/portfolios/${state.selectedPortfolioId}/summary`);
     const detailMap = new Map((state.performance?.holdingsDetail || []).map((item) => [item.holdingId, item]));
-    state.holdings = state.holdingsRaw.map((item) => normalizeHolding(item, detailMap));
+    const mappedHoldings = state.holdingsRaw.map((item) => normalizeHolding(item, detailMap));
+    state.holdings = mappedHoldings.filter((item) => item.type !== "Cash");
 
-    const holdingMap = new Map(state.holdings.map((item) => [item.id, item]));
+    const holdingMap = new Map(mappedHoldings.map((item) => [item.id, item]));
     const txResult = await apiRequest(`/portfolios/${state.selectedPortfolioId}/transactions`);
     const flattened = Array.isArray(txResult) ? txResult : [];
     state.transactions = flattened
@@ -463,13 +470,14 @@ function renderTransactionManager() {
     const draftAssetType = state.tradeDraft?.assetType || selectedHolding?.type || "Stock";
     const draftCurrency = state.tradeDraft?.currency || selectedHolding?.currency || "USD";
     const holdingOptions = state.holdings
+        .filter((holding) => holding.type !== "Cash")
         .map((holding) => `<option value="${holding.id}" ${selectedHoldingId === holding.id ? "selected" : ""}>${holding.ticker} (Holding #${holding.id})</option>`)
         .join("");
 
     return `
         <article class="card info-panel">
             <h2>Transaction Manager</h2>
-            <p>Create BUY/SELL transaction records for the selected portfolio. BUY can auto-create a new holding by ticker.</p>
+            <p>Create BUY/SELL transaction records for the selected portfolio. Cash deposit is available on Dashboard.</p>
             <form id="transaction-form" class="manager-grid" novalidate>
                 <label>Holding</label>
                 <select name="holdingId">
@@ -540,6 +548,27 @@ function renderTransactionManager() {
                     </tbody>
                 </table>
             </div>
+        </article>
+    `;
+}
+
+function renderCashDepositPanel() {
+    return `
+        <article class="card info-panel">
+            <h2>Cash Deposit</h2>
+            <p>Add funds directly from Dashboard. This updates cash and records a transaction.</p>
+            <form id="cash-deposit-form" class="manager-grid" novalidate>
+                <label>Deposit Amount</label>
+                <input name="amount" type="number" min="0.01" step="0.01" required>
+
+                <label>Deposit Time</label>
+                <input name="tradeDate" type="datetime-local" required>
+
+                <div class="manager-actions">
+                    <button type="submit" class="primary-btn">Deposit Cash</button>
+                </div>
+            </form>
+            <p class="form-error" id="cash-deposit-message">${toInputSafeText(state.transactionMessage)}</p>
         </article>
     `;
 }
@@ -655,7 +684,9 @@ function render() {
     ].join("");
 
     const charts = view.showPerformance ? `${PortfolioPerformanceChart(state.selectedRange)}${AssetAllocationChart(state.allocationData)}` : "";
-    const holdingsMarkup = view.holdingsMarkup || (view.showHoldings ? HoldingsTable(state.holdings, state.searchTerm, state.selectedType) : "");
+    const holdingsMarkup = view.holdingsMarkup || (view.showHoldings
+        ? `${state.activeNav === "Dashboard" ? renderCashDepositPanel() : ""}${HoldingsTable(state.holdings, state.searchTerm, state.selectedType)}`
+        : "");
     const transactionsMarkup = view.transactionsMarkup || (view.showTransactions ? RecentTransactions(state.transactions) : "");
     const portfolioOptions = state.portfolios
         .map(
@@ -936,6 +967,37 @@ function bindEvents() {
                 });
                 state.tradeDraft = null;
                 state.transactionMessage = "Transaction saved.";
+                await refreshPortfolioData();
+                render();
+            } catch (error) {
+                state.transactionMessage = error.message;
+                render();
+            }
+        });
+    }
+
+    const cashDepositForm = document.getElementById("cash-deposit-form");
+    if (cashDepositForm) {
+        cashDepositForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const formData = new FormData(cashDepositForm);
+            try {
+                const amount = Number(formData.get("amount"));
+                if (!(amount > 0)) {
+                    throw new Error("Deposit amount must be greater than 0.");
+                }
+
+                const payload = {
+                    amount,
+                    tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
+                };
+
+                await apiRequest(`/portfolios/${state.selectedPortfolioId}/cash/deposit`, {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                });
+
+                state.transactionMessage = "Cash deposited and recorded.";
                 await refreshPortfolioData();
                 render();
             } catch (error) {

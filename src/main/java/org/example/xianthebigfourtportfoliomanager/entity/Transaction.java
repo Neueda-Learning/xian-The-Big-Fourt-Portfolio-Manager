@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 public class Transaction {
     private Integer id;
+    private Integer portfolioId;
     private Integer holdingId;
     private String type;
     private BigDecimal quantity;
@@ -14,8 +15,9 @@ public class Transaction {
     public Transaction() {
     }
 
-    public Transaction(Integer id, Integer holdingId, String type, BigDecimal quantity, BigDecimal price, LocalDateTime tradeDate) {
+    public Transaction(Integer id, Integer portfolioId, Integer holdingId, String type, BigDecimal quantity, BigDecimal price, LocalDateTime tradeDate) {
         this.id = id;
+        this.portfolioId = portfolioId;
         this.holdingId = holdingId;
         this.type = type;
         this.quantity = quantity;
@@ -29,6 +31,10 @@ public class Transaction {
 
     public Integer getHoldingId() {
         return holdingId;
+    }
+
+    public Integer getPortfolioId() {
+        return portfolioId;
     }
 
     public String getType() {
@@ -53,6 +59,10 @@ public class Transaction {
 
     public void setHoldingId(Integer holdingId) {
         this.holdingId = holdingId;
+    }
+
+    public void setPortfolioId(Integer portfolioId) {
+        this.portfolioId = portfolioId;
     }
 
     public void setType(String type) {

@@ -80,6 +80,12 @@ public class PortfolioRepository {
         return getPortfolioById(id);
     }
 
+    public portfolio updateInitialCashAndBalance(int id, BigDecimal initialCash, BigDecimal cashBalance) {
+        String sql = "update portfolio set initial_cash = ?, cash_balance = ?, update_at = CURRENT_TIMESTAMP where id = ?";
+        jdbcTemplate.update(sql, initialCash, cashBalance, id);
+        return getPortfolioById(id);
+    }
+
     public int deleteById(int id) {
         String sql = "delete from portfolio where id = ?";
         return jdbcTemplate.update(sql, id);
