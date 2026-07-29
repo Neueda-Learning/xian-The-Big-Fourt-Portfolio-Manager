@@ -18,18 +18,33 @@ A Spring Boot portfolio management project with REST APIs and a complete static 
 ## Run the project
 
 ```powershell
-Set-Location "C:\Users\Administrator\IdeaProjects\xian-The-Big-Fourt-Portfolio-Manager"
+Set-Location "C:\Users\Administrator\Desktop\final\xian-The-Big-Fourt-Portfolio-Manager"
 .\mvnw.cmd spring-boot:run
 ```
 
 Open in browser:
 
-- `http://localhost:9001/`
+- `http://localhost:9009/`
+
+## First run behavior (for new clones)
+
+Default startup now auto-bootstraps the database when it is new/empty:
+
+- Creates tables from `schema.sql` if missing.
+- Inserts the same seed dataset from `data.sql` only when `portfolio` has no rows.
+- Does not wipe existing data on subsequent runs.
+
+So new contributors can run the normal command directly and still get data:
+
+```powershell
+Set-Location "C:\Users\Administrator\Desktop\final\xian-The-Big-Fourt-Portfolio-Manager"
+.\mvnw.cmd spring-boot:run
+```
 
 ## Run tests
 
 ```powershell
-Set-Location "C:\Users\Administrator\IdeaProjects\xian-The-Big-Fourt-Portfolio-Manager"
+Set-Location "C:\Users\Administrator\Desktop\final\xian-The-Big-Fourt-Portfolio-Manager"
 .\mvnw.cmd test -DskipTests=false
 ```
 
