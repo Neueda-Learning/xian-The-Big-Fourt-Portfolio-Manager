@@ -2,6 +2,7 @@ package org.example.xianthebigfourtportfoliomanager.controller;
 
 import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
 import org.example.xianthebigfourtportfoliomanager.repository.PortfolioRepository;
+import org.example.xianthebigfourtportfoliomanager.service.PortfolioSummaryService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -10,9 +11,12 @@ import java.util.List;
 public class PortfolioController {
 
     private final PortfolioRepository repository;
+    private final PortfolioSummaryService portfolioSummaryService;
 
-    public PortfolioController(PortfolioRepository repository) {
+    public PortfolioController(PortfolioRepository repository,
+                               PortfolioSummaryService portfolioSummaryService) {
         this.repository = repository;
+        this.portfolioSummaryService = portfolioSummaryService;
     }
 
     @GetMapping("/portfolio/{id}")
@@ -23,6 +27,11 @@ public class PortfolioController {
     @GetMapping("/portfolios")
     public List<portfolio> getPortfolios() {
         return repository.getAllPortfolios();
+    }
+
+    @GetMapping("/portfolios/{id}/summary")
+    public PortfolioSummaryService.PortfolioSummaryResponse getSummary(@PathVariable int id) {
+        return portfolioSummaryService.getSummary(id);
     }
 
     @PostMapping("/saveportfolio")

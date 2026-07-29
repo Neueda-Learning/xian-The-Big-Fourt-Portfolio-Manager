@@ -20,6 +20,8 @@ export function AddAssetModal(isOpen, draftAsset = null) {
 
                     <label for="asset-price">Current price</label>
                     <input id="asset-price" name="price" type="number" min="0.0001" step="0.0001" required value="${currentPrice}">
+                        <button class="secondary-btn" type="button" id="fetch-latest-price" data-ticker="${ticker}">Fetch Latest Price (Yahoo)</button>
+                        <p class="modal-hint">Fetched quote is not auto-applied. Review and click Update Price to confirm.</p>
                     `
                             : `
                     <p>This action moved to Transaction Manager. Use BUY/SELL transactions to change quantity and cash.</p>

@@ -33,11 +33,16 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final HoldingRepository holdingRepository;
     private final PortfolioRepository portfolioRepository;
+    private final PortfolioSnapshotService portfolioSnapshotService;
 
-    public TransactionService(TransactionRepository transactionRepository, HoldingRepository holdingRepository, PortfolioRepository portfolioRepository) {
+    public TransactionService(TransactionRepository transactionRepository,
+                              HoldingRepository holdingRepository,
+                              PortfolioRepository portfolioRepository,
+                              PortfolioSnapshotService portfolioSnapshotService) {
         this.transactionRepository = transactionRepository;
         this.holdingRepository = holdingRepository;
         this.portfolioRepository = portfolioRepository;
+        this.portfolioSnapshotService = portfolioSnapshotService;
     }
 
     public List<Transaction> getTransactionsByHoldingId(int holdingId) {
@@ -85,6 +90,7 @@ public class TransactionService {
 
         Transaction saved = transactionRepository.save(normalized);
         recalculateHoldingFromTransactions(normalized.getHoldingId());
+        portfolioSnapshotService.captureToday(portf.getId());
         return saved;
     }
 
@@ -113,6 +119,7 @@ public class TransactionService {
 
         Transaction updated = transactionRepository.update(normalized);
         recalculateHoldingFromTransactions(normalized.getHoldingId());
+        portfolioSnapshotService.captureToday(portf.getId());
 
         return updated;
     }
@@ -129,6 +136,7 @@ public class TransactionService {
         int rows = transactionRepository.deleteById(id);
         if (rows > 0) {
             recalculateHoldingFromTransactions(before.getHoldingId());
+            portfolioSnapshotService.captureToday(portf.getId());
         }
         return rows;
     }
@@ -170,11 +178,11 @@ public class TransactionService {
 
         if (quantity.compareTo(ZERO) <= 0) {
             holding.setQuantity(ZERO);
-            holding.setPurchasePrice(ZERO);
+            holding.setAveragePrice(ZERO);
         } else {
             BigDecimal avgPrice = totalCost.divide(quantity, 4, RoundingMode.HALF_UP);
             holding.setQuantity(quantity.setScale(4, RoundingMode.HALF_UP));
-            holding.setPurchasePrice(avgPrice);
+            holding.setAveragePrice(avgPrice);
         }
 
         holdingRepository.update(holding);
