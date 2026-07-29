@@ -9,7 +9,6 @@ import { HoldingsTable } from "./js/components/HoldingsTable.js";
 import { RecentTransactions } from "./js/components/RecentTransactions.js";
 import { AddAssetModal } from "./js/components/AddAssetModal.js";
 import { icons } from "./js/components/icons.js";
-import { generatePerformanceData } from "./js/data/mockData.js";
 import { compactDate, formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "./js/utils/formatters.js";
 
 const appRoot = document.getElementById("app");
@@ -21,8 +20,10 @@ const state = {
     holdingsRaw: [],
     holdings: [],
     transactions: [],
+    snapshots: [],
     priceHistory: [],
     performance: null,
+    summary: null,
     performanceData: [],
     allocationData: [],
     loading: true,
@@ -47,8 +48,8 @@ let lastFocusedElement;
 let escapeHandlerBound = false;
 
 /*
- * Eren issue: frontend initially used local mock state and chart slicing that masked real backend updates.
- * Fix: migrate to API-driven state loading/refresh and make time-range chart data react to real dates and post-close trades.
+ * Eren issue: performance curve looked accurate but was inferred from single-ticker history or mock fallback.
+ * Fix: only render curve from real portfolio-level points; keep single-point display until snapshot history exists.
  * Reviewer: GitHub Copilot (GPT-5.3-Codex).
  */
 
@@ -119,19 +120,9 @@ function normalizeTransaction(rawTx, holdingMap) {
     };
 }
 
-function buildFallbackPerformanceSeries(totalValue) {
-    const generated = generatePerformanceData(120);
-    const baseline = generated[generated.length - 1]?.value || 1;
-    const target = totalValue > 0 ? totalValue : 100000;
-    return generated.map((item) => ({
-        date: item.date,
-        value: Number(((item.value / baseline) * target).toFixed(2))
-    }));
-}
-
 function rebuildAllocationData() {
-    const total = state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
-    if (total <= 0) {
+    const allocation = state.summary?.allocation;
+    if (!Array.isArray(allocation) || allocation.length === 0) {
         state.allocationData = [];
         return;
     }
@@ -142,64 +133,47 @@ function rebuildAllocationData() {
         Cash: "#f59e0b"
     };
 
-    const grouped = new Map();
-    state.holdings.forEach((item) => {
-        const value = item.quantity * item.currentPrice;
-        grouped.set(item.type, (grouped.get(item.type) || 0) + value);
+    state.allocationData = allocation.map((item) => {
+        const label = String(item.assetType || "Other");
+        return {
+            label: `${label}s`,
+            value: Number(item.percentage || 0),
+            color: colorMap[label] || "#8b5cf6"
+        };
     });
-
-    state.allocationData = Array.from(grouped.entries()).map(([label, value]) => ({
-        label: `${label}s`,
-        value: Number(((value / total) * 100).toFixed(1)),
-        color: colorMap[label] || "#8b5cf6"
-    }));
 }
 
 function buildPerformanceSeries() {
-    if (state.priceHistory.length > 1) {
-        const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
-        const ordered = [...state.priceHistory].sort((a, b) => new Date(a.priceDate).getTime() - new Date(b.priceDate).getTime());
-        const lastPriceDate = new Date(`${ordered[ordered.length - 1].priceDate}T23:59:59`);
-        const holdingPriceMap = new Map(state.holdings.map((item) => [item.id, Number(item.currentPrice || item.avgPrice || 0)]));
-        const postCloseImpact = state.transactions
-            .filter((tx) => new Date(tx.dateRaw).getTime() > lastPriceDate.getTime())
-            .reduce((sum, tx) => {
-                const qty = Number(tx.quantity || 0);
-                const tradePrice = Number(tx.price || 0);
-                const currentPrice = Number(holdingPriceMap.get(tx.holdingId) || tradePrice);
-                if (String(tx.txType).toUpperCase() === "SELL") {
-                    return sum + qty * (tradePrice - currentPrice);
-                }
-                return sum + qty * (currentPrice - tradePrice);
-            }, 0);
-        const referenceTotal = totalValue - postCloseImpact;
-        const lastClose = Number(ordered[ordered.length - 1]?.closeprice || 0);
+    const orderedSnapshots = [...state.snapshots]
+        .sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
 
-        state.performanceData = ordered.map((item) => {
-            const close = Number(item.closeprice || 0);
-            const scaled = lastClose > 0 ? (close / lastClose) * referenceTotal : referenceTotal;
-            return {
-                date: new Date(`${item.priceDate}T16:00:00`),
-                value: Number(scaled.toFixed(2))
-            };
-        });
+    if (orderedSnapshots.length > 0) {
+        state.performanceData = orderedSnapshots.map((item) => ({
+            date: new Date(`${item.snapshotDate}T16:00:00`),
+            value: Number(item.totalValue || 0)
+        }));
 
-        const now = new Date();
-        const latestPoint = state.performanceData[state.performanceData.length - 1];
-        if (!latestPoint || latestPoint.date.toDateString() !== now.toDateString()) {
+        const totalValue = Number(state.performance?.totalMarketValue || 0);
+        const lastPoint = state.performanceData[state.performanceData.length - 1];
+        const today = new Date().toDateString();
+        if (!lastPoint || new Date(lastPoint.date).toDateString() !== today) {
             state.performanceData.push({
-                date: now,
+                date: new Date(),
                 value: Number(totalValue.toFixed(2))
             });
         } else {
-            latestPoint.value = Number(totalValue.toFixed(2));
+            lastPoint.value = Number(totalValue.toFixed(2));
         }
-
         return;
     }
 
-    const totalValue = state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
-    state.performanceData = buildFallbackPerformanceSeries(totalValue);
+    const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
+    state.performanceData = [
+        {
+            date: new Date(),
+            value: Number(totalValue.toFixed(2))
+        }
+    ];
 }
 
 async function refreshPortfolioData() {
@@ -207,9 +181,11 @@ async function refreshPortfolioData() {
         state.holdingsRaw = [];
         state.holdings = [];
         state.transactions = [];
+        state.snapshots = [];
         state.priceHistory = [];
         state.performance = null;
-        state.performanceData = buildFallbackPerformanceSeries(0);
+        state.summary = null;
+        state.performanceData = [];
         state.allocationData = [];
         return;
     }
@@ -218,6 +194,7 @@ async function refreshPortfolioData() {
     state.holdingsRaw = Array.isArray(holdingsRaw) ? holdingsRaw : [];
 
     state.performance = await apiRequest(`/portfolio/${state.selectedPortfolioId}/performance`);
+    state.summary = await apiRequest(`/portfolios/${state.selectedPortfolioId}/summary`);
     const detailMap = new Map((state.performance?.holdingsDetail || []).map((item) => [item.holdingId, item]));
     state.holdings = state.holdingsRaw.map((item) => normalizeHolding(item, detailMap));
 
@@ -227,6 +204,9 @@ async function refreshPortfolioData() {
     state.transactions = flattened
         .map((item) => normalizeTransaction(item, holdingMap))
         .sort((a, b) => new Date(b.dateRaw).getTime() - new Date(a.dateRaw).getTime());
+
+    const snapshotsResult = await apiRequest(`/portfolios/${state.selectedPortfolioId}/snapshots`);
+    state.snapshots = Array.isArray(snapshotsResult) ? snapshotsResult : [];
 
     const primaryTicker = state.holdings.find((item) => item.ticker && item.type !== "Cash")?.ticker;
     if (primaryTicker) {
@@ -264,17 +244,22 @@ async function loadInitialData() {
 }
 
 function computeMetrics() {
-    const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
-    const totalCost = state.holdings.reduce((sum, item) => sum + item.quantity * item.avgPrice, 0);
-    const totalGain = Number(state.performance?.totalReturn ?? (totalValue - totalCost));
-    const totalGainPct = Number(state.performance?.returnRate ?? (totalCost > 0 ? (totalGain / totalCost) * 100 : 0));
-    const cashBalance = Number(state.performance?.cashBalance ?? 0);
+    const totalValue = Number(state.summary?.totalValue ?? state.performance?.totalMarketValue ?? state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
+    const totalGain = Number(state.summary?.totalGain ?? state.performance?.totalReturn ?? 0);
+    const totalGainPct = Number(state.summary?.totalGainPercentage ?? state.performance?.returnRate ?? 0);
+    const cashBalance = Number(state.summary?.cashBalance ?? state.performance?.cashBalance ?? 0);
+    const dayChangeReliable = Boolean(state.summary?.dayChangeReliable);
 
-    const selectedData = getPerformanceDataByRange(state.selectedRange);
-    const lastValue = selectedData[selectedData.length - 1]?.value || 0;
-    const prevValue = selectedData[selectedData.length - 2]?.value || lastValue;
-    const dayChangeAmount = lastValue - prevValue;
-    const dayChangePct = prevValue > 0 ? (dayChangeAmount / prevValue) * 100 : 0;
+    let dayChangeAmount = Number(state.summary?.dayChangeAmount ?? 0);
+    let dayChangePct = Number(state.summary?.dayChangePercentage ?? 0);
+
+    if (!dayChangeReliable) {
+        const selectedData = getPerformanceDataByRange(state.selectedRange);
+        const lastValue = selectedData[selectedData.length - 1]?.value || 0;
+        const prevValue = selectedData[selectedData.length - 2]?.value || lastValue;
+        dayChangeAmount = lastValue - prevValue;
+        dayChangePct = prevValue > 0 ? (dayChangeAmount / prevValue) * 100 : 0;
+    }
 
     return {
         totalValue,
@@ -282,7 +267,8 @@ function computeMetrics() {
         totalGainPct,
         dayChangeAmount,
         dayChangePct,
-        cashBalance
+        cashBalance,
+        dayChangeReliable
     };
 }
 
@@ -635,7 +621,7 @@ function render() {
             id: "summary-day-change",
             label: "Day's Change",
             value: formatCurrency(metrics.dayChangeAmount),
-            detail: formatPercent(metrics.dayChangePct),
+            detail: metrics.dayChangeReliable ? formatPercent(metrics.dayChangePct) : "Awaiting yesterday snapshot",
             tone: metrics.dayChangeAmount >= 0 ? "positive" : "negative",
             icon: icons.check
         }),
@@ -1038,12 +1024,38 @@ function bindAddAssetModalEvents() {
     const cancelButton = document.getElementById("cancel-add-asset");
     const form = document.getElementById("add-asset-form");
     const error = document.getElementById("add-asset-error");
+    const fetchLatestButton = document.getElementById("fetch-latest-price");
+    const priceInput = document.getElementById("asset-price");
 
     cancelButton?.addEventListener("click", () => closeAddAssetModal());
 
     modal.addEventListener("click", (event) => {
         if (event.target.id === "add-asset-modal") {
             closeAddAssetModal();
+        }
+    });
+
+    fetchLatestButton?.addEventListener("click", async () => {
+        const ticker = String(fetchLatestButton.dataset.ticker || "").trim().toUpperCase();
+        if (!ticker) {
+            error.textContent = "Ticker is required to fetch latest quote.";
+            return;
+        }
+
+        error.textContent = "Fetching latest Yahoo quote...";
+        try {
+            const quote = await apiRequest(`/quotes/latest/${encodeURIComponent(ticker)}`);
+            const fetched = Number(quote?.price);
+            if (!(fetched > 0)) {
+                throw new Error("Yahoo did not return a valid quote.");
+            }
+            if (priceInput) {
+                priceInput.value = fetched.toFixed(4);
+            }
+            const source = String(quote?.source || "UNKNOWN");
+            error.textContent = `Latest price loaded (${source}): ${formatCurrency(fetched)}. Click Update Price to confirm.`;
+        } catch (fetchError) {
+            error.textContent = fetchError.message;
         }
     });
 

@@ -26,16 +26,13 @@ public class PerformanceService {
     private final PortfolioRepository portfolioRepository;
     private final HoldingRepository holdingRepository;
     private final PriceHistoryRepository priceHistoryRepository;
-    private final YahooFinanceService yahooFinanceService;
 
     public PerformanceService(PortfolioRepository portfolioRepository,
                               HoldingRepository holdingRepository,
-                              PriceHistoryRepository priceHistoryRepository,
-                              YahooFinanceService yahooFinanceService) {
+                              PriceHistoryRepository priceHistoryRepository) {
         this.portfolioRepository = portfolioRepository;
         this.holdingRepository = holdingRepository;
         this.priceHistoryRepository = priceHistoryRepository;
-        this.yahooFinanceService = yahooFinanceService;
     }
 
     public PerformanceResult getPerformance(int portfolioId) {
@@ -103,7 +100,7 @@ public class PerformanceService {
             return latest.getCloseprice();
         }
 
-        return yahooFinanceService.getCurrentPrice(ticker);
+        return null;
     }
 
     public static class PerformanceResult {

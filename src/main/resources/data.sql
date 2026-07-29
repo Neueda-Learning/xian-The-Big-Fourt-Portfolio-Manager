@@ -14,6 +14,13 @@ INSERT INTO `transaction` (holding_id, type, quantity, price, trade_date) VALUES
 INSERT INTO `transaction` (holding_id, type, quantity, price, trade_date) VALUES (4, 'BUY', 30.0000, 280.0000, '2026-04-01 13:10:00');
 INSERT INTO `transaction` (holding_id, type, quantity, price, trade_date) VALUES (5, 'BUY', 20.0000, 880.5000, '2026-04-01 13:20:00');
 
+INSERT INTO portfolio_snapshot (portfolio_id, snapshot_date, total_value, cash_balance, holdings_value) VALUES (1, '2026-07-20', 94092.5000, 50000.0000, 44092.5000);
+INSERT INTO portfolio_snapshot (portfolio_id, snapshot_date, total_value, cash_balance, holdings_value) VALUES (1, '2026-07-21', 94332.5000, 50000.0000, 44332.5000);
+INSERT INTO portfolio_snapshot (portfolio_id, snapshot_date, total_value, cash_balance, holdings_value) VALUES (1, '2026-07-22', 94462.5000, 50000.0000, 44462.5000);
+INSERT INTO portfolio_snapshot (portfolio_id, snapshot_date, total_value, cash_balance, holdings_value) VALUES (2, '2026-07-20', 50985.0000, 23990.0000, 26995.0000);
+INSERT INTO portfolio_snapshot (portfolio_id, snapshot_date, total_value, cash_balance, holdings_value) VALUES (2, '2026-07-21', 51241.0000, 23990.0000, 27251.0000);
+INSERT INTO portfolio_snapshot (portfolio_id, snapshot_date, total_value, cash_balance, holdings_value) VALUES (2, '2026-07-22', 51544.0000, 23990.0000, 27554.0000);
+
 INSERT INTO price_history (ticker, price_date, close_price) VALUES ('AAPL', '2026-07-20', 194.2000);
 INSERT INTO price_history (ticker, price_date, close_price) VALUES ('AAPL', '2026-07-21', 195.8000);
 INSERT INTO price_history (ticker, price_date, close_price) VALUES ('AAPL', '2026-07-22', 197.1000);

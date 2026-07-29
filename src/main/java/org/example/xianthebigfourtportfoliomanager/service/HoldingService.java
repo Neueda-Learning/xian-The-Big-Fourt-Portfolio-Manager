@@ -13,9 +13,12 @@ import java.util.List;
 public class HoldingService {
 
     private final HoldingRepository holdingRepository;
+    private final PortfolioSnapshotService portfolioSnapshotService;
 
-    public HoldingService(HoldingRepository holdingRepository) {
+    public HoldingService(HoldingRepository holdingRepository,
+                          PortfolioSnapshotService portfolioSnapshotService) {
         this.holdingRepository = holdingRepository;
+        this.portfolioSnapshotService = portfolioSnapshotService;
     }
 
     public List<Holding> getHoldingsByPortfolioId(int portfolioId) {
@@ -42,6 +45,10 @@ public class HoldingService {
         }
 
         holding.setCurrentPrice(currentPrice.setScale(4, RoundingMode.HALF_UP));
-        return holdingRepository.update(holding);
+        Holding updated = holdingRepository.update(holding);
+        if (updated != null && updated.getPortfolioId() != null) {
+            portfolioSnapshotService.captureToday(updated.getPortfolioId());
+        }
+        return updated;
     }
 }
