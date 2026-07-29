@@ -1,23 +1,32 @@
 package org.example.xianthebigfourtportfoliomanager.service;
 
+<<<<<<< HEAD
 import org.example.xianthebigfourtportfoliomanager.entity.AssetType;
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
 import org.example.xianthebigfourtportfoliomanager.entity.Transaction;
 import org.example.xianthebigfourtportfoliomanager.repository.HoldingRepository;
+=======
+import org.example.xianthebigfourtportfoliomanager.entity.Transaction;
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
 import org.example.xianthebigfourtportfoliomanager.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+<<<<<<< HEAD
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+=======
+import java.util.List;
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
 
 @Service
 public class TransactionService {
 
+<<<<<<< HEAD
     /**
      * Eren issue: transactions could violate objective rules (oversell, negative cash, inconsistent holdings).
      * Fix: enforce strict BUY/SELL validation, cash balance debits/credits, and deterministic holding recomputation.
@@ -34,6 +43,12 @@ public class TransactionService {
     public TransactionService(TransactionRepository transactionRepository, HoldingRepository holdingRepository) {
         this.transactionRepository = transactionRepository;
         this.holdingRepository = holdingRepository;
+=======
+    private final TransactionRepository transactionRepository;
+
+    public TransactionService(TransactionRepository transactionRepository) {
+        this.transactionRepository = transactionRepository;
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     }
 
     public List<Transaction> getTransactionsByHoldingId(int holdingId) {
@@ -46,6 +61,7 @@ public class TransactionService {
 
     @Transactional
     public Transaction create(Transaction transaction) {
+<<<<<<< HEAD
         Transaction normalized = normalizeTransaction(transaction);
         Holding assetHolding = requireAssetHolding(normalized.getHoldingId());
         Holding cashHolding = requireCashHolding(assetHolding.getPortfolioId());
@@ -57,10 +73,14 @@ public class TransactionService {
         Transaction saved = transactionRepository.save(normalized);
         recalculateHoldingFromTransactions(normalized.getHoldingId());
         return saved;
+=======
+        return transactionRepository.save(transaction);
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     }
 
     @Transactional
     public Transaction update(Transaction transaction) {
+<<<<<<< HEAD
         if (transaction.getId() == null) {
             throw new IllegalArgumentException("Transaction id is required for update.");
         }
@@ -86,10 +106,14 @@ public class TransactionService {
         recalculateHoldingFromTransactions(normalized.getHoldingId());
 
         return updated;
+=======
+        return transactionRepository.update(transaction);
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     }
 
     @Transactional
     public int deleteById(int id) {
+<<<<<<< HEAD
         Transaction before = requireExistingTransaction(id);
         Holding assetHolding = requireAssetHolding(before.getHoldingId());
         Holding cashHolding = requireCashHolding(assetHolding.getPortfolioId());
@@ -256,6 +280,9 @@ public class TransactionService {
         if (cashHolding.getPurchasePrice() == null || cashHolding.getPurchasePrice().compareTo(ZERO) <= 0) {
             cashHolding.setPurchasePrice(BigDecimal.ONE);
         }
+=======
+        return transactionRepository.deleteById(id);
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     }
 }
 

@@ -1,10 +1,23 @@
+<<<<<<< HEAD
 -- H2 Database schema (compatible with MySQL when using MySQL driver)
+=======
+SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS `transaction`;
+DROP TABLE IF EXISTS holding;
+DROP TABLE IF EXISTS portfolio;
+SET FOREIGN_KEY_CHECKS = 1;
+
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
 CREATE TABLE IF NOT EXISTS portfolio (
     id INT AUTO_INCREMENT PRIMARY KEY,
     pro_name VARCHAR(100) NOT NULL,
     pro_description VARCHAR(500),
     create_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+<<<<<<< HEAD
     update_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+=======
+    update_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
 );
 
 CREATE TABLE IF NOT EXISTS holding (
@@ -17,11 +30,19 @@ CREATE TABLE IF NOT EXISTS holding (
     purchase_date DATE,
     currency VARCHAR(3) DEFAULT 'USD',
     create_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+<<<<<<< HEAD
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (portfolio_id) REFERENCES portfolio(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS transaction (
+=======
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (portfolio_id) REFERENCES portfolio(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS `transaction` (
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     id INT AUTO_INCREMENT PRIMARY KEY,
     holding_id INT NOT NULL,
     type VARCHAR(4) NOT NULL,
@@ -31,6 +52,7 @@ CREATE TABLE IF NOT EXISTS transaction (
     FOREIGN KEY (holding_id) REFERENCES holding(id) ON DELETE CASCADE
 );
 
+<<<<<<< HEAD
 CREATE TABLE IF NOT EXISTS price_history (
     id INT AUTO_INCREMENT PRIMARY KEY,
     ticker VARCHAR(20) NOT NULL,
@@ -38,3 +60,5 @@ CREATE TABLE IF NOT EXISTS price_history (
     close_price DECIMAL(18,4) NOT NULL,
     create_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+=======
+>>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
