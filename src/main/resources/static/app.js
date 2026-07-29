@@ -458,6 +458,10 @@ function renderSettingsPanel() {
 function renderTransactionManager() {
     const selectedHoldingId = state.tradeDraft?.holdingId;
     const selectedType = state.tradeDraft?.type || "BUY";
+    const selectedHolding = state.holdings.find((item) => item.id === selectedHoldingId);
+    const draftTicker = state.tradeDraft?.ticker || selectedHolding?.ticker || "";
+    const draftAssetType = state.tradeDraft?.assetType || selectedHolding?.type || "Stock";
+    const draftCurrency = state.tradeDraft?.currency || selectedHolding?.currency || "USD";
     const holdingOptions = state.holdings
         .map((holding) => `<option value="${holding.id}" ${selectedHoldingId === holding.id ? "selected" : ""}>${holding.ticker} (Holding #${holding.id})</option>`)
         .join("");
@@ -465,10 +469,25 @@ function renderTransactionManager() {
     return `
         <article class="card info-panel">
             <h2>Transaction Manager</h2>
-            <p>Create BUY/SELL transaction records for the selected portfolio. Transactions are immutable once created.</p>
+            <p>Create BUY/SELL transaction records for the selected portfolio. BUY can auto-create a new holding by ticker.</p>
             <form id="transaction-form" class="manager-grid" novalidate>
                 <label>Holding</label>
-                <select name="holdingId" required>${holdingOptions}</select>
+                <select name="holdingId">
+                    <option value="">Auto (BUY uses ticker/assetType)</option>
+                    ${holdingOptions}
+                </select>
+
+                <label>Ticker (for new BUY)</label>
+                <input name="ticker" type="text" maxlength="20" value="${toInputSafeText(draftTicker)}" placeholder="e.g. GOOGL">
+
+                <label>Asset Type</label>
+                <select name="assetType">
+                    <option value="STOCK" ${String(draftAssetType).toUpperCase() === "STOCK" ? "selected" : ""}>STOCK</option>
+                    <option value="BOND" ${String(draftAssetType).toUpperCase() === "BOND" ? "selected" : ""}>BOND</option>
+                </select>
+
+                <label>Currency</label>
+                <input name="currency" type="text" maxlength="3" value="${toInputSafeText(draftCurrency)}" placeholder="USD">
 
                 <label>Type</label>
                 <select name="type" required>
@@ -883,9 +902,27 @@ function bindEvents() {
             event.preventDefault();
             const formData = new FormData(transactionForm);
             try {
+                const type = String(formData.get("type") || "BUY").toUpperCase();
+                const holdingIdRaw = String(formData.get("holdingId") || "").trim();
+                const holdingId = holdingIdRaw ? Number(holdingIdRaw) : null;
+                const ticker = String(formData.get("ticker") || "").trim().toUpperCase();
+                const assetType = String(formData.get("assetType") || "STOCK").trim().toUpperCase();
+                const currency = String(formData.get("currency") || "USD").trim().toUpperCase();
+
+                if (type === "SELL" && !holdingId) {
+                    throw new Error("SELL requires an existing holding.");
+                }
+
+                if (type === "BUY" && !holdingId && !ticker) {
+                    throw new Error("For a new BUY, provide ticker (or choose an existing holding).");
+                }
+
                 const payload = {
-                    holdingId: Number(formData.get("holdingId")),
-                    type: String(formData.get("type") || "BUY").toUpperCase(),
+                    holdingId,
+                    ticker,
+                    assetType,
+                    currency,
+                    type,
                     quantity: Number(formData.get("quantity")),
                     price: Number(formData.get("price")),
                     tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
@@ -963,7 +1000,7 @@ function bindEvents() {
     if (addAssetBtn) {
         addAssetBtn.addEventListener("click", () => {
             state.activeNav = "Transactions";
-            state.transactionMessage = "Use BUY/SELL transactions to change positions and cash.";
+            state.transactionMessage = "Use BUY/SELL transactions. New BUY can auto-create holding by ticker.";
             render();
         });
     }
@@ -995,7 +1032,15 @@ function bindEvents() {
 
     document.querySelectorAll("[data-buy-id]").forEach((button) => {
         button.addEventListener("click", () => {
-            state.tradeDraft = { holdingId: Number(button.dataset.buyId), type: "BUY" };
+            const holdingId = Number(button.dataset.buyId);
+            const holding = state.holdings.find((item) => Number(item.id) === holdingId);
+            state.tradeDraft = {
+                holdingId,
+                type: "BUY",
+                ticker: holding?.ticker,
+                assetType: holding?.type,
+                currency: holding?.currency
+            };
             state.activeNav = "Transactions";
             state.transactionMessage = "Create BUY transaction (Buy More).";
             render();
@@ -1004,7 +1049,15 @@ function bindEvents() {
 
     document.querySelectorAll("[data-sell-id]").forEach((button) => {
         button.addEventListener("click", () => {
-            state.tradeDraft = { holdingId: Number(button.dataset.sellId), type: "SELL" };
+            const holdingId = Number(button.dataset.sellId);
+            const holding = state.holdings.find((item) => Number(item.id) === holdingId);
+            state.tradeDraft = {
+                holdingId,
+                type: "SELL",
+                ticker: holding?.ticker,
+                assetType: holding?.type,
+                currency: holding?.currency
+            };
             state.activeNav = "Transactions";
             state.transactionMessage = "Create SELL transaction.";
             render();

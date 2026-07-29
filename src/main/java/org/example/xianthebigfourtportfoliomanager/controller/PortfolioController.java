@@ -1,7 +1,7 @@
 package org.example.xianthebigfourtportfoliomanager.controller;
 
 import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
-import org.example.xianthebigfourtportfoliomanager.repository.PortfolioRepository;
+import org.example.xianthebigfourtportfoliomanager.service.PortfolioService;
 import org.example.xianthebigfourtportfoliomanager.service.PortfolioSummaryService;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,23 +10,23 @@ import java.util.List;
 @RestController
 public class PortfolioController {
 
-    private final PortfolioRepository repository;
+    private final PortfolioService portfolioService;
     private final PortfolioSummaryService portfolioSummaryService;
 
-    public PortfolioController(PortfolioRepository repository,
+    public PortfolioController(PortfolioService portfolioService,
                                PortfolioSummaryService portfolioSummaryService) {
-        this.repository = repository;
+        this.portfolioService = portfolioService;
         this.portfolioSummaryService = portfolioSummaryService;
     }
 
     @GetMapping("/portfolio/{id}")
     public portfolio getPortfolio(@PathVariable int id) {
-        return repository.getPortfolioById(id);
+        return portfolioService.getPortfolioById(id);
     }
 
     @GetMapping("/portfolios")
     public List<portfolio> getPortfolios() {
-        return repository.getAllPortfolios();
+        return portfolioService.getAllPortfolios();
     }
 
     @GetMapping("/portfolios/{id}/summary")
@@ -36,7 +36,7 @@ public class PortfolioController {
 
     @PostMapping("/saveportfolio")
     public String addPortfolio(@RequestBody portfolio portf) {
-        portfolio saved = repository.save(portf);
+        portfolio saved = portfolioService.create(portf);
         if (saved != null) {
             return "Record added successfully!";
         } else {
@@ -47,7 +47,7 @@ public class PortfolioController {
     @PatchMapping("/portfolio/{id}")
     public String updatePortfolio(@PathVariable int id, @RequestBody portfolio portf) {
         portf.setId(id);
-        portfolio updated = repository.update(portf);
+        portfolio updated = portfolioService.update(portf);
         if (updated != null) {
             return "Record has been updated";
         } else {
@@ -57,7 +57,7 @@ public class PortfolioController {
 
     @DeleteMapping("/delete/portfolio/{id}")
     public String deletePortfolio(@PathVariable int id) {
-        int row = repository.deleteById(id);
+        int row = portfolioService.deleteById(id);
         if (row == 1) {
             return "Delete successful " + id;
         } else {
