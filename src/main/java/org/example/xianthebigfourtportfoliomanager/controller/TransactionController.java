@@ -1,6 +1,7 @@
 package org.example.xianthebigfourtportfoliomanager.controller;
 
 import org.example.xianthebigfourtportfoliomanager.entity.Transaction;
+import org.example.xianthebigfourtportfoliomanager.entity.TradeRequest;
 import org.example.xianthebigfourtportfoliomanager.service.TransactionService;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,6 +32,11 @@ public class TransactionController {
         return service.getTransactionsByHoldingId(holdingId);
     }
 
+    @GetMapping("/portfolios/{id}/transactions")
+    public List<Transaction> getByPortfolioId(@PathVariable int id) {
+        return service.getTransactionsByPortfolioId(id);
+    }
+
     @PostMapping("/savetransaction")
     public String addTransaction(@RequestBody Transaction transaction) {
         Transaction saved = service.create(transaction);
@@ -41,24 +47,23 @@ public class TransactionController {
         }
     }
 
+    @PostMapping("/portfolios/{id}/trades/buy")
+    public Transaction buy(@PathVariable int id, @RequestBody TradeRequest request) {
+        return service.buy(id, request);
+    }
+
+    @PostMapping("/portfolios/{id}/trades/sell")
+    public Transaction sell(@PathVariable int id, @RequestBody TradeRequest request) {
+        return service.sell(id, request);
+    }
+
     @PatchMapping("/transaction/{id}")
     public String updateTransaction(@PathVariable int id, @RequestBody Transaction transaction) {
-        transaction.setId(id);
-        Transaction updated = service.update(transaction);
-        if (updated != null) {
-            return "Record has been updated";
-        } else {
-            return "Update failed!";
-        }
+        throw new IllegalArgumentException("Transaction update is disabled. Transactions are immutable once created.");
     }
 
     @DeleteMapping("/delete/transaction/{id}")
     public String deleteTransaction(@PathVariable int id) {
-        int row = service.deleteById(id);
-        if (row == 1) {
-            return "Delete successful " + id;
-        } else {
-            return "Delete failed!";
-        }
+        throw new IllegalArgumentException("Transaction delete is disabled. Transactions are immutable once created.");
     }
 }

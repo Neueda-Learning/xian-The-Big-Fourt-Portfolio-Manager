@@ -725,6 +725,18 @@ th {
     color: var(--text-secondary);
 }
 
+.modal .modal-hint {
+    margin-top: -4px;
+    margin-bottom: 10px;
+    font-size: 12px;
+}
+
+.chart-footnote {
+    margin: 10px 0 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
 .info-panel {
     margin-bottom: 14px;
 }

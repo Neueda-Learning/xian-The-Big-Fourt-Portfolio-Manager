@@ -6,8 +6,7 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
-import java.sql.PreparedStatement;
-import java.sql.Statement;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.List;
 
@@ -29,6 +28,8 @@ public class PortfolioRepository {
                     rs.getInt("id"),
                     rs.getString("pro_name"),
                     rs.getString("pro_description"),
+                    rs.getBigDecimal("initial_cash"),
+                    rs.getBigDecimal("cash_balance"),
                     createAt == null ? null : createAt.toLocalDateTime(),
                     updateAt == null ? null : updateAt.toLocalDateTime()
             );
@@ -45,6 +46,8 @@ public class PortfolioRepository {
                     rs.getInt("id"),
                     rs.getString("pro_name"),
                     rs.getString("pro_description"),
+                    rs.getBigDecimal("initial_cash"),
+                    rs.getBigDecimal("cash_balance"),
                     createAt == null ? null : createAt.toLocalDateTime(),
                     updateAt == null ? null : updateAt.toLocalDateTime()
             );
@@ -52,25 +55,31 @@ public class PortfolioRepository {
     }
 
     public portfolio save(portfolio portf) {
-        String sql = "insert into portfolio (pro_name, pro_description) values (?, ?)";
-        KeyHolder keyHolder = new GeneratedKeyHolder();
-        int rows = jdbcTemplate.update(con -> {
-            PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
-            ps.setString(1, portf.getName());
-            ps.setString(2, portf.getDescription());
-            return ps;
-        }, keyHolder);
+        BigDecimal initialCash = portf.getInitialCash() == null ? BigDecimal.ZERO : portf.getInitialCash();
+        BigDecimal cashBalance = initialCash;
+        String sql = "insert into portfolio (pro_name, pro_description, initial_cash, cash_balance) values (?, ?, ?, ?)";
+        int rows = jdbcTemplate.update(sql, portf.getName(), portf.getDescription(), initialCash, cashBalance);
         if (rows == 0) {
             return null;
         }
-        Number key = keyHolder.getKey();
-        return key == null ? portf : getPortfolioById(key.intValue());
+
+        Integer id = jdbcTemplate.queryForObject("select LAST_INSERT_ID()", Integer.class);
+        if (id == null) {
+            return portf;
+        }
+        return getPortfolioById(id);
     }
 
     public portfolio update(portfolio portf) {
         String sql = "update portfolio set pro_name = ?, pro_description = ?, update_at = CURRENT_TIMESTAMP where id = ?";
         jdbcTemplate.update(sql, portf.getName(), portf.getDescription(), portf.getId());
         return getPortfolioById(portf.getId());
+    }
+
+    public portfolio updateCashBalance(int id, BigDecimal cashBalance) {
+        String sql = "update portfolio set cash_balance = ?, update_at = CURRENT_TIMESTAMP where id = ?";
+        jdbcTemplate.update(sql, cashBalance, id);
+        return getPortfolioById(id);
     }
 
     public int deleteById(int id) {
@@ -84,3 +93,4 @@ public class PortfolioRepository {
         return count != null && count.intValue() > 0;
     }
 }
+

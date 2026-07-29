@@ -10,7 +10,8 @@ public class Holding {
     private AssetType assetType;
     private String ticker;
     private BigDecimal quantity;
-    private BigDecimal purchasePrice;
+    private BigDecimal averagePrice;
+    private BigDecimal currentPrice;
     private LocalDate purchasedata;
     private String currency;
     private LocalDateTime createAt;
@@ -19,13 +20,14 @@ public class Holding {
     public Holding() {
     }
 
-    public Holding(Integer id, Integer portfolioId, AssetType assetType, String ticker, BigDecimal quantity, BigDecimal purchasePrice, LocalDate purchasedata, String currency, LocalDateTime createAt, LocalDateTime updataAt) {
+    public Holding(Integer id, Integer portfolioId, AssetType assetType, String ticker, BigDecimal quantity, BigDecimal averagePrice, BigDecimal currentPrice, LocalDate purchasedata, String currency, LocalDateTime createAt, LocalDateTime updataAt) {
         this.id = id;
         this.portfolioId = portfolioId;
         this.assetType = assetType;
         this.ticker = ticker;
         this.quantity = quantity;
-        this.purchasePrice = purchasePrice;
+        this.averagePrice = averagePrice;
+        this.currentPrice = currentPrice;
         this.purchasedata = purchasedata;
         this.currency = currency;
         this.createAt = createAt;
@@ -52,8 +54,12 @@ public class Holding {
         return quantity;
     }
 
-    public BigDecimal getPurchasePrice() {
-        return purchasePrice;
+    public BigDecimal getAveragePrice() {
+        return averagePrice;
+    }
+
+    public BigDecimal getCurrentPrice() {
+        return currentPrice;
     }
 
     public LocalDate getPurchasedata() {
@@ -92,8 +98,12 @@ public class Holding {
         this.quantity = quantity;
     }
 
-    public void setPurchasePrice(BigDecimal purchasePrice) {
-        this.purchasePrice = purchasePrice;
+    public void setAveragePrice(BigDecimal averagePrice) {
+        this.averagePrice = averagePrice;
+    }
+
+    public void setCurrentPrice(BigDecimal currentPrice) {
+        this.currentPrice = currentPrice;
     }
 
     public void setPurchasedata(LocalDate purchasedata) {

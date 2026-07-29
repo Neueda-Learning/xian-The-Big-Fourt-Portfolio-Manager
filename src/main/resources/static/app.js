@@ -11,7 +11,6 @@ import { AddAssetModal } from "./js/components/AddAssetModal.js";
 import { ConfirmDeleteModal } from "./js/components/ConfirmDeleteModal.js";
 import { AIChat } from "./js/components/AIChat.js";
 import { icons } from "./js/components/icons.js";
-import { generatePerformanceData } from "./js/data/mockData.js";
 import { compactDate, formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "./js/utils/formatters.js";
 
 const appRoot = document.getElementById("app");
@@ -23,8 +22,10 @@ const state = {
     holdingsRaw: [],
     holdings: [],
     transactions: [],
+    snapshots: [],
     priceHistory: [],
     performance: null,
+    summary: null,
     performanceData: [],
     allocationData: [],
     loading: true,
@@ -39,6 +40,7 @@ const state = {
     activeNav: "Dashboard",
     darkMode: savedTheme === "dark",
     editingTransactionId: null,
+    tradeDraft: null,
     priceMessage: "",
     transactionMessage: "",
     // AI Chat state
@@ -56,30 +58,44 @@ let lastFocusedElement;
 let escapeHandlerBound = false;
 
 /*
- * Eren issue: frontend initially used local mock state and chart slicing that masked real backend updates.
- * Fix: migrate to API-driven state loading/refresh and make time-range chart data react to real dates and post-close trades.
+ * Eren issue: performance curve looked accurate but was inferred from single-ticker history or mock fallback.
+ * Fix: only render curve from real portfolio-level points; keep single-point display until snapshot history exists.
  * Reviewer: GitHub Copilot (GPT-5.3-Codex).
  */
 
 async function apiRequest(path, options = {}) {
-    const response = await fetch(path, {
-        headers: {
-            "Content-Type": "application/json",
-            ...(options.headers || {})
-        },
-        ...options
-    });
+    const { timeoutMs = 12000, ...fetchOptions } = options;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    const text = await response.text();
-    const isJson = (response.headers.get("content-type") || "").includes("application/json");
-    const payload = isJson && text ? JSON.parse(text) : text;
+    try {
+        const response = await fetch(path, {
+            headers: {
+                "Content-Type": "application/json",
+                ...(fetchOptions.headers || {})
+            },
+            ...fetchOptions,
+            signal: controller.signal
+        });
 
-    if (!response.ok) {
-        const message = typeof payload === "string" ? payload : payload?.message || "Request failed";
-        throw new Error(message);
+        const text = await response.text();
+        const isJson = (response.headers.get("content-type") || "").includes("application/json");
+        const payload = isJson && text ? JSON.parse(text) : text;
+
+        if (!response.ok) {
+            const message = typeof payload === "string" ? payload : payload?.message || "Request failed";
+            throw new Error(message);
+        }
+
+        return payload;
+    } catch (error) {
+        if (error?.name === "AbortError") {
+            throw new Error(`Request timed out after ${timeoutMs}ms: ${path}`);
+        }
+        throw error;
+    } finally {
+        clearTimeout(timer);
     }
-
-    return payload;
 }
 
 function normalizeHolding(rawHolding, detailMap) {
@@ -95,8 +111,8 @@ function normalizeHolding(rawHolding, detailMap) {
         name: ticker,
         type,
         quantity: Number(rawHolding.quantity || 0),
-        avgPrice: Number(rawHolding.purchasePrice || 0),
-        currentPrice: Number(detail?.currentPrice || rawHolding.purchasePrice || 0),
+        avgPrice: Number(rawHolding.averagePrice || 0),
+        currentPrice: Number(detail?.currentPrice || rawHolding.currentPrice || 0),
         currency: rawHolding.currency || "USD",
         purchasedata: rawHolding.purchasedata
     };
@@ -128,19 +144,9 @@ function normalizeTransaction(rawTx, holdingMap) {
     };
 }
 
-function buildFallbackPerformanceSeries(totalValue) {
-    const generated = generatePerformanceData(120);
-    const baseline = generated[generated.length - 1]?.value || 1;
-    const target = totalValue > 0 ? totalValue : 100000;
-    return generated.map((item) => ({
-        date: item.date,
-        value: Number(((item.value / baseline) * target).toFixed(2))
-    }));
-}
-
 function rebuildAllocationData() {
-    const total = state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
-    if (total <= 0) {
+    const allocation = state.summary?.allocation;
+    if (!Array.isArray(allocation) || allocation.length === 0) {
         state.allocationData = [];
         return;
     }
@@ -151,64 +157,47 @@ function rebuildAllocationData() {
         Cash: "#f59e0b"
     };
 
-    const grouped = new Map();
-    state.holdings.forEach((item) => {
-        const value = item.quantity * item.currentPrice;
-        grouped.set(item.type, (grouped.get(item.type) || 0) + value);
+    state.allocationData = allocation.map((item) => {
+        const label = String(item.assetType || "Other");
+        return {
+            label: `${label}s`,
+            value: Number(item.percentage || 0),
+            color: colorMap[label] || "#8b5cf6"
+        };
     });
-
-    state.allocationData = Array.from(grouped.entries()).map(([label, value]) => ({
-        label: `${label}s`,
-        value: Number(((value / total) * 100).toFixed(1)),
-        color: colorMap[label] || "#8b5cf6"
-    }));
 }
 
 function buildPerformanceSeries() {
-    if (state.priceHistory.length > 1) {
-        const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
-        const ordered = [...state.priceHistory].sort((a, b) => new Date(a.priceDate).getTime() - new Date(b.priceDate).getTime());
-        const lastPriceDate = new Date(`${ordered[ordered.length - 1].priceDate}T23:59:59`);
-        const holdingPriceMap = new Map(state.holdings.map((item) => [item.id, Number(item.currentPrice || item.avgPrice || 0)]));
-        const postCloseImpact = state.transactions
-            .filter((tx) => new Date(tx.dateRaw).getTime() > lastPriceDate.getTime())
-            .reduce((sum, tx) => {
-                const qty = Number(tx.quantity || 0);
-                const tradePrice = Number(tx.price || 0);
-                const currentPrice = Number(holdingPriceMap.get(tx.holdingId) || tradePrice);
-                if (String(tx.txType).toUpperCase() === "SELL") {
-                    return sum + qty * (tradePrice - currentPrice);
-                }
-                return sum + qty * (currentPrice - tradePrice);
-            }, 0);
-        const referenceTotal = totalValue - postCloseImpact;
-        const lastClose = Number(ordered[ordered.length - 1]?.closeprice || 0);
+    const orderedSnapshots = [...state.snapshots]
+        .sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
 
-        state.performanceData = ordered.map((item) => {
-            const close = Number(item.closeprice || 0);
-            const scaled = lastClose > 0 ? (close / lastClose) * referenceTotal : referenceTotal;
-            return {
-                date: new Date(`${item.priceDate}T16:00:00`),
-                value: Number(scaled.toFixed(2))
-            };
-        });
+    if (orderedSnapshots.length > 0) {
+        state.performanceData = orderedSnapshots.map((item) => ({
+            date: new Date(`${item.snapshotDate}T16:00:00`),
+            value: Number(item.totalValue || 0)
+        }));
 
-        const now = new Date();
-        const latestPoint = state.performanceData[state.performanceData.length - 1];
-        if (!latestPoint || latestPoint.date.toDateString() !== now.toDateString()) {
+        const totalValue = Number(state.performance?.totalMarketValue || 0);
+        const lastPoint = state.performanceData[state.performanceData.length - 1];
+        const today = new Date().toDateString();
+        if (!lastPoint || new Date(lastPoint.date).toDateString() !== today) {
             state.performanceData.push({
-                date: now,
+                date: new Date(),
                 value: Number(totalValue.toFixed(2))
             });
         } else {
-            latestPoint.value = Number(totalValue.toFixed(2));
+            lastPoint.value = Number(totalValue.toFixed(2));
         }
-
         return;
     }
 
-    const totalValue = state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
-    state.performanceData = buildFallbackPerformanceSeries(totalValue);
+    const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
+    state.performanceData = [
+        {
+            date: new Date(),
+            value: Number(totalValue.toFixed(2))
+        }
+    ];
 }
 
 async function refreshPortfolioData() {
@@ -216,9 +205,11 @@ async function refreshPortfolioData() {
         state.holdingsRaw = [];
         state.holdings = [];
         state.transactions = [];
+        state.snapshots = [];
         state.priceHistory = [];
         state.performance = null;
-        state.performanceData = buildFallbackPerformanceSeries(0);
+        state.summary = null;
+        state.performanceData = [];
         state.allocationData = [];
         return;
     }
@@ -227,20 +218,19 @@ async function refreshPortfolioData() {
     state.holdingsRaw = Array.isArray(holdingsRaw) ? holdingsRaw : [];
 
     state.performance = await apiRequest(`/portfolio/${state.selectedPortfolioId}/performance`);
+    state.summary = await apiRequest(`/portfolios/${state.selectedPortfolioId}/summary`);
     const detailMap = new Map((state.performance?.holdingsDetail || []).map((item) => [item.holdingId, item]));
     state.holdings = state.holdingsRaw.map((item) => normalizeHolding(item, detailMap));
 
     const holdingMap = new Map(state.holdings.map((item) => [item.id, item]));
-    const txResult = await Promise.all(
-        state.holdings.map(async (holding) => {
-            const rows = await apiRequest(`/transactions/holding/${holding.id}`);
-            return Array.isArray(rows) ? rows : [];
-        })
-    );
-    const flattened = txResult.flat();
+    const txResult = await apiRequest(`/portfolios/${state.selectedPortfolioId}/transactions`);
+    const flattened = Array.isArray(txResult) ? txResult : [];
     state.transactions = flattened
         .map((item) => normalizeTransaction(item, holdingMap))
         .sort((a, b) => new Date(b.dateRaw).getTime() - new Date(a.dateRaw).getTime());
+
+    const snapshotsResult = await apiRequest(`/portfolios/${state.selectedPortfolioId}/snapshots`);
+    state.snapshots = Array.isArray(snapshotsResult) ? snapshotsResult : [];
 
     const primaryTicker = state.holdings.find((item) => item.ticker && item.type !== "Cash")?.ticker;
     if (primaryTicker) {
@@ -362,19 +352,22 @@ async function loadInitialData() {
 }
 
 function computeMetrics() {
-    const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
-    const totalCost = state.holdings.reduce((sum, item) => sum + item.quantity * item.avgPrice, 0);
-    const totalGain = totalValue - totalCost;
-    const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
-    const cashBalance = state.holdings
-        .filter((item) => item.type === "Cash")
-        .reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
+    const totalValue = Number(state.summary?.totalValue ?? state.performance?.totalMarketValue ?? state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
+    const totalGain = Number(state.summary?.totalGain ?? state.performance?.totalReturn ?? 0);
+    const totalGainPct = Number(state.summary?.totalGainPercentage ?? state.performance?.returnRate ?? 0);
+    const cashBalance = Number(state.summary?.cashBalance ?? state.performance?.cashBalance ?? 0);
+    const dayChangeReliable = Boolean(state.summary?.dayChangeReliable);
 
-    const selectedData = getPerformanceDataByRange(state.selectedRange);
-    const lastValue = selectedData[selectedData.length - 1]?.value || 0;
-    const prevValue = selectedData[selectedData.length - 2]?.value || lastValue;
-    const dayChangeAmount = lastValue - prevValue;
-    const dayChangePct = prevValue > 0 ? (dayChangeAmount / prevValue) * 100 : 0;
+    let dayChangeAmount = Number(state.summary?.dayChangeAmount ?? 0);
+    let dayChangePct = Number(state.summary?.dayChangePercentage ?? 0);
+
+    if (!dayChangeReliable) {
+        const selectedData = getPerformanceDataByRange(state.selectedRange);
+        const lastValue = selectedData[selectedData.length - 1]?.value || 0;
+        const prevValue = selectedData[selectedData.length - 2]?.value || lastValue;
+        dayChangeAmount = lastValue - prevValue;
+        dayChangePct = prevValue > 0 ? (dayChangeAmount / prevValue) * 100 : 0;
+    }
 
     return {
         totalValue,
@@ -382,7 +375,8 @@ function computeMetrics() {
         totalGainPct,
         dayChangeAmount,
         dayChangePct,
-        cashBalance
+        cashBalance,
+        dayChangeReliable
     };
 }
 
@@ -586,22 +580,43 @@ function renderSettingsPanel() {
 }
 
 function renderTransactionManager() {
+    const selectedHoldingId = state.tradeDraft?.holdingId;
+    const selectedType = state.tradeDraft?.type || "BUY";
+    const selectedHolding = state.holdings.find((item) => item.id === selectedHoldingId);
+    const draftTicker = state.tradeDraft?.ticker || selectedHolding?.ticker || "";
+    const draftAssetType = state.tradeDraft?.assetType || selectedHolding?.type || "Stock";
+    const draftCurrency = state.tradeDraft?.currency || selectedHolding?.currency || "USD";
     const holdingOptions = state.holdings
-        .map((holding) => `<option value="${holding.id}">${holding.ticker} (Holding #${holding.id})</option>`)
+        .map((holding) => `<option value="${holding.id}" ${selectedHoldingId === holding.id ? "selected" : ""}>${holding.ticker} (Holding #${holding.id})</option>`)
         .join("");
 
     return `
         <article class="card info-panel">
             <h2>Transaction Manager</h2>
-            <p>Create, edit, and delete transaction records for the selected portfolio.</p>
+            <p>Create BUY/SELL transaction records for the selected portfolio. BUY can auto-create a new holding by ticker.</p>
             <form id="transaction-form" class="manager-grid" novalidate>
                 <label>Holding</label>
-                <select name="holdingId" required>${holdingOptions}</select>
+                <select name="holdingId">
+                    <option value="">Auto (BUY uses ticker/assetType)</option>
+                    ${holdingOptions}
+                </select>
+
+                <label>Ticker (for new BUY)</label>
+                <input name="ticker" type="text" maxlength="20" value="${toInputSafeText(draftTicker)}" placeholder="e.g. GOOGL">
+
+                <label>Asset Type</label>
+                <select name="assetType">
+                    <option value="STOCK" ${String(draftAssetType).toUpperCase() === "STOCK" ? "selected" : ""}>STOCK</option>
+                    <option value="BOND" ${String(draftAssetType).toUpperCase() === "BOND" ? "selected" : ""}>BOND</option>
+                </select>
+
+                <label>Currency</label>
+                <input name="currency" type="text" maxlength="3" value="${toInputSafeText(draftCurrency)}" placeholder="USD">
 
                 <label>Type</label>
                 <select name="type" required>
-                    <option value="BUY">BUY</option>
-                    <option value="SELL">SELL</option>
+                    <option value="BUY" ${selectedType === "BUY" ? "selected" : ""}>BUY</option>
+                    <option value="SELL" ${selectedType === "SELL" ? "selected" : ""}>SELL</option>
                 </select>
 
                 <label>Quantity</label>
@@ -628,7 +643,6 @@ function renderTransactionManager() {
                         <th>Qty</th>
                         <th>Price</th>
                         <th>Date</th>
-                        <th>Actions</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -643,9 +657,6 @@ function renderTransactionManager() {
                                 <td>${item.quantity}</td>
                                 <td>${formatCurrency(item.price)}</td>
                                 <td>${toInputSafeText(item.date)}</td>
-                                <td>
-                                    <button class="icon-btn small" type="button" data-tx-delete="${item.id}">${icons.trash}</button>
-                                </td>
                             </tr>
                         `
                             )
@@ -753,7 +764,7 @@ function render() {
             id: "summary-day-change",
             label: "Day's Change",
             value: formatCurrency(metrics.dayChangeAmount),
-            detail: formatPercent(metrics.dayChangePct),
+            detail: metrics.dayChangeReliable ? formatPercent(metrics.dayChangePct) : "Awaiting yesterday snapshot",
             tone: metrics.dayChangeAmount >= 0 ? "positive" : "negative",
             icon: icons.check
         }),
@@ -809,7 +820,7 @@ function render() {
                 showAddAsset: view.showAddAsset,
                 extraControls: `<label class="header-select-wrap">Portfolio<select id="portfolio-switch" class="header-select">${portfolioOptions}</select></label>`
             }),
-            summaryCards: view.showSummary ? summaryCards : globalErrorMarkup,
+            summaryCards: view.showSummary ? `${globalErrorMarkup}${summaryCards}` : globalErrorMarkup,
             charts,
             holdingsTable: holdingsMarkup,
             recentTransactions: transactionsMarkup,
@@ -1032,17 +1043,39 @@ function bindEvents() {
             event.preventDefault();
             const formData = new FormData(transactionForm);
             try {
+                const type = String(formData.get("type") || "BUY").toUpperCase();
+                const holdingIdRaw = String(formData.get("holdingId") || "").trim();
+                const holdingId = holdingIdRaw ? Number(holdingIdRaw) : null;
+                const ticker = String(formData.get("ticker") || "").trim().toUpperCase();
+                const assetType = String(formData.get("assetType") || "STOCK").trim().toUpperCase();
+                const currency = String(formData.get("currency") || "USD").trim().toUpperCase();
+
+                if (type === "SELL" && !holdingId) {
+                    throw new Error("SELL requires an existing holding.");
+                }
+
+                if (type === "BUY" && !holdingId && !ticker) {
+                    throw new Error("For a new BUY, provide ticker (or choose an existing holding).");
+                }
+
                 const payload = {
-                    holdingId: Number(formData.get("holdingId")),
-                    type: String(formData.get("type") || "BUY").toUpperCase(),
+                    holdingId,
+                    ticker,
+                    assetType,
+                    currency,
+                    type,
                     quantity: Number(formData.get("quantity")),
                     price: Number(formData.get("price")),
                     tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
                 };
-                await apiRequest("/savetransaction", {
+                const tradePath = payload.type === "SELL"
+                    ? `/portfolios/${state.selectedPortfolioId}/trades/sell`
+                    : `/portfolios/${state.selectedPortfolioId}/trades/buy`;
+                await apiRequest(tradePath, {
                     method: "POST",
                     body: JSON.stringify(payload)
                 });
+                state.tradeDraft = null;
                 state.transactionMessage = "Transaction saved.";
                 await refreshPortfolioData();
                 render();
@@ -1052,20 +1085,6 @@ function bindEvents() {
             }
         });
     }
-
-    document.querySelectorAll("[data-tx-delete]").forEach((button) => {
-        button.addEventListener("click", async () => {
-            try {
-                await apiRequest(`/delete/transaction/${button.dataset.txDelete}`, { method: "DELETE" });
-                state.transactionMessage = "Transaction deleted.";
-                await refreshPortfolioData();
-                render();
-            } catch (error) {
-                state.transactionMessage = error.message;
-                render();
-            }
-        });
-    });
 
     const priceForm = document.getElementById("price-form");
     if (priceForm) {
@@ -1121,9 +1140,8 @@ function bindEvents() {
     const addAssetBtn = document.getElementById("add-asset-btn");
     if (addAssetBtn) {
         addAssetBtn.addEventListener("click", () => {
-            lastFocusedElement = document.activeElement;
-            state.addModalOpen = true;
-            state.editingAssetId = null;
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Use BUY/SELL transactions. New BUY can auto-create holding by ticker.";
             render();
         });
     }
@@ -1143,14 +1161,6 @@ function bindEvents() {
             render();
         });
     }
-
-    document.querySelectorAll("[data-delete-id]").forEach((button) => {
-        button.addEventListener("click", () => {
-            lastFocusedElement = document.activeElement;
-            state.deleteTargetId = Number(button.dataset.deleteId);
-            render();
-        });
-    });
 
     document.querySelectorAll("[data-edit-id]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -1208,8 +1218,41 @@ function bindEvents() {
         });
     });
 
+    document.querySelectorAll("[data-buy-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const holdingId = Number(button.dataset.buyId);
+            const holding = state.holdings.find((item) => Number(item.id) === holdingId);
+            state.tradeDraft = {
+                holdingId,
+                type: "BUY",
+                ticker: holding?.ticker,
+                assetType: holding?.type,
+                currency: holding?.currency
+            };
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Create BUY transaction (Buy More).";
+            render();
+        });
+    });
+
+    document.querySelectorAll("[data-sell-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const holdingId = Number(button.dataset.sellId);
+            const holding = state.holdings.find((item) => Number(item.id) === holdingId);
+            state.tradeDraft = {
+                holdingId,
+                type: "SELL",
+                ticker: holding?.ticker,
+                assetType: holding?.type,
+                currency: holding?.currency
+            };
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Create SELL transaction.";
+            render();
+        });
+    });
+
     bindAddAssetModalEvents();
-    bindDeleteModalEvents();
     bindModalKeyboardEscape();
 }
 
@@ -1222,6 +1265,8 @@ function bindAddAssetModalEvents() {
     const cancelButton = document.getElementById("cancel-add-asset");
     const form = document.getElementById("add-asset-form");
     const error = document.getElementById("add-asset-error");
+    const fetchLatestButton = document.getElementById("fetch-latest-price");
+    const priceInput = document.getElementById("asset-price");
 
     cancelButton?.addEventListener("click", () => closeAddAssetModal());
 
@@ -1231,47 +1276,52 @@ function bindAddAssetModalEvents() {
         }
     });
 
+    fetchLatestButton?.addEventListener("click", async () => {
+        const ticker = String(fetchLatestButton.dataset.ticker || "").trim().toUpperCase();
+        if (!ticker) {
+            error.textContent = "Ticker is required to fetch latest quote.";
+            return;
+        }
+
+        error.textContent = "Fetching latest Yahoo quote...";
+        try {
+            const quote = await apiRequest(`/quotes/latest/${encodeURIComponent(ticker)}`);
+            const fetched = Number(quote?.price);
+            if (!(fetched > 0)) {
+                throw new Error("Yahoo did not return a valid quote.");
+            }
+            if (priceInput) {
+                priceInput.value = fetched.toFixed(4);
+            }
+            const source = String(quote?.source || "UNKNOWN");
+            error.textContent = `Latest price loaded (${source}): ${formatCurrency(fetched)}. Click Update Price to confirm.`;
+        } catch (fetchError) {
+            error.textContent = fetchError.message;
+        }
+    });
+
     form?.addEventListener("submit", async (event) => {
         event.preventDefault();
+        if (!state.editingAssetId) {
+            closeAddAssetModal();
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Use BUY/SELL in Transaction Manager to change positions.";
+            render();
+            return;
+        }
+
         const formData = new FormData(form);
-        const ticker = String(formData.get("ticker") || "").trim().toUpperCase();
-        const name = String(formData.get("name") || "").trim();
-        const type = String(formData.get("type") || "Stock");
-        const quantity = Number(formData.get("quantity"));
         const price = Number(formData.get("price"));
-
-        if (!ticker || !name) {
-            error.textContent = "Ticker and asset name are required.";
+        if (!(price > 0)) {
+            error.textContent = "Current price must be greater than 0.";
             return;
         }
-        if (!(quantity > 0) || !(price >= 0)) {
-            error.textContent = "Quantity must be positive and price cannot be negative.";
-            return;
-        }
-
-        const enumType = type.toUpperCase();
-        const payload = {
-            portfolioId: state.selectedPortfolioId,
-            assetType: enumType,
-            ticker: enumType === "CASH" ? "CASH" : ticker,
-            quantity,
-            purchasePrice: price,
-            purchasedata: new Date().toISOString().slice(0, 10),
-            currency: "USD"
-        };
 
         try {
-            if (state.editingAssetId) {
-                await apiRequest(`/holding/${state.editingAssetId}`, {
-                    method: "PATCH",
-                    body: JSON.stringify(payload)
-                });
-            } else {
-                await apiRequest("/saveholding", {
-                    method: "POST",
-                    body: JSON.stringify(payload)
-                });
-            }
+            const query = `currentPrice=${encodeURIComponent(price.toFixed(4))}`;
+            await apiRequest(`/holding/${state.editingAssetId}/price?${query}`, {
+                method: "PATCH"
+            });
 
             state.globalError = "";
             closeAddAssetModal();
@@ -1288,58 +1338,12 @@ function bindAddAssetModalEvents() {
     });
 }
 
-function bindDeleteModalEvents() {
-    const modal = document.getElementById("confirm-delete-modal");
-    if (!modal) {
-        return;
-    }
-
-    const cancelButton = document.getElementById("cancel-delete-asset");
-    const confirmButton = document.getElementById("confirm-delete-asset");
-
-    cancelButton?.addEventListener("click", () => closeDeleteModal());
-
-    confirmButton?.addEventListener("click", async () => {
-        if (!state.deleteTargetId) {
-            return;
-        }
-        try {
-            await apiRequest(`/delete/holding/${state.deleteTargetId}`, { method: "DELETE" });
-            state.deleteTargetId = null;
-            state.loading = true;
-            render();
-            await refreshPortfolioData();
-            state.loading = false;
-            render();
-            restoreFocus();
-        } catch (error) {
-            state.globalError = error.message;
-            state.deleteTargetId = null;
-            render();
-        }
-    });
-
-    modal.addEventListener("click", (event) => {
-        if (event.target.id === "confirm-delete-modal") {
-            closeDeleteModal();
-        }
-    });
-}
-
 function bindModalKeyboardEscape() {
     if (escapeHandlerBound) {
         return;
     }
 
     document.addEventListener("click", (event) => {
-        const deleteBtn = event.target.closest("[data-delete-id]");
-        if (deleteBtn) {
-            lastFocusedElement = document.activeElement;
-            state.deleteTargetId = Number(deleteBtn.dataset.deleteId);
-            render();
-            return;
-        }
-
         const editBtn = event.target.closest("[data-edit-id]");
         if (editBtn) {
             lastFocusedElement = document.activeElement;
@@ -1353,8 +1357,6 @@ function bindModalKeyboardEscape() {
         if (event.key === "Escape") {
             if (state.addModalOpen) {
                 closeAddAssetModal();
-            } else if (state.deleteTargetId) {
-                closeDeleteModal();
             }
         }
     });
@@ -1365,12 +1367,6 @@ function bindModalKeyboardEscape() {
 function closeAddAssetModal() {
     state.addModalOpen = false;
     state.editingAssetId = null;
-    render();
-    restoreFocus();
-}
-
-function closeDeleteModal() {
-    state.deleteTargetId = null;
     render();
     restoreFocus();
 }
@@ -1389,4 +1385,3 @@ function restoreFocus() {
 }
 
 loadInitialData();
-

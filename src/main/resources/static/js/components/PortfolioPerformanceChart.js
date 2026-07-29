@@ -23,6 +23,7 @@ export function PortfolioPerformanceChart(activeRange) {
             <div class="canvas-wrap performance-canvas-wrap">
                 <canvas id="performance-chart" aria-label="Portfolio performance line chart"></canvas>
             </div>
+            <p class="chart-footnote">Historical portfolio curve is disabled until snapshot history is available.</p>
         </article>
     `;
 }
