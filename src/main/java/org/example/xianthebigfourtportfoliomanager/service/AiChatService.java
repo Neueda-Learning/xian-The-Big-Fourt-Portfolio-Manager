@@ -1,4 +1,5 @@
 package org.example.xianthebigfourtportfoliomanager.service;
+import jakarta.servlet.http.HttpSession;
 import org.example.xianthebigfourtportfoliomanager.config.AiProperties;
 import org.example.xianthebigfourtportfoliomanager.dto.AiChatResponse;
 import org.example.xianthebigfourtportfoliomanager.dto.AiModelOptionsResponse;
@@ -32,19 +33,24 @@ import java.util.stream.Collectors;
 @Service
 public class AiChatService {
     private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
+    private static final String KEY_SOURCE_USER = "user";
+    private static final String KEY_SOURCE_SYSTEM = "system";
+    private static final String KEY_SOURCE_NONE = "none";
     // System prompt restricts model behaviour: knowledge Q&A only; no business operations are permitted.
     private static final String SYSTEM_PROMPT = "You are a financial knowledge Q&A assistant in a portfolio management system. You may only provide educational and informational text responses, which do not constitute investment advice. You must not execute trades on behalf of users, modify portfolios, holdings, or databases, or claim to have completed any operations.";
     private static final String DISCLAIMER = "AI responses are for educational and informational purposes only and do not constitute investment advice.";
     private final RestTemplate aiRestTemplate;
     private final AiProperties aiProperties;
-    public AiChatService(@Qualifier("aiRestTemplate") RestTemplate aiRestTemplate, AiProperties aiProperties) {
+    private final UserAiKeyService userAiKeyService;
+    public AiChatService(@Qualifier("aiRestTemplate") RestTemplate aiRestTemplate, AiProperties aiProperties, UserAiKeyService userAiKeyService) {
         this.aiRestTemplate = aiRestTemplate;
         this.aiProperties = aiProperties;
+        this.userAiKeyService = userAiKeyService;
     }
     /**
      * Unified public entry point: the Controller calls only this method and never accesses the external AI directly.
      */
-    public AiChatResponse chat(String model, String message) {
+    public AiChatResponse chat(String model, String message, HttpSession session) {
         if (!aiProperties.isEnabled()) {
             return new AiChatResponse("AI feature is not enabled. Please contact the administrator.", normalizedProvider(), resolveDefaultModel());
         }
@@ -66,6 +72,10 @@ public class AiChatService {
         if (sanitizedMessage == null) {
             return new AiChatResponse("Question must not be empty and must not exceed 2000 characters.", normalizedProvider(), selectedModel);
         }
+        ActiveApiKey activeApiKey = resolveActiveApiKey(session);
+        if (!activeApiKey.configured()) {
+            return new AiChatResponse("No AI API key is configured. Please add your API key in Settings.", normalizedProvider(), selectedModel);
+        }
         String endpoint = buildEndpoint(aiProperties.getBaseUrl(), aiProperties.getChatPath());
         // Build an OpenAI-compatible request body using a Map to avoid extra DTO files.
         // The model selected by the frontend is placed directly into the "model" field to switch Zhipu models.
@@ -81,8 +91,8 @@ public class AiChatService {
         requestBody.put("messages", messages);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        // Bearer token is read from an environment variable and never hard-coded.
-        headers.setBearerAuth(aiProperties.getApiKey().trim());
+        // 中文注释：优先使用当前会话中的个人 Key，若不存在再回退到系统默认 Key。
+        headers.setBearerAuth(activeApiKey.value());
         try {
             // Call the external AI Chat Completions endpoint via RestTemplate.
             ResponseEntity<Map> response = aiRestTemplate.exchange(
@@ -104,25 +114,25 @@ public class AiChatService {
         } catch (HttpStatusCodeException ex) {
             HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
             if (status == HttpStatus.TOO_MANY_REQUESTS) {
-                return new AiChatResponse("Too many requests to AI service. Please try again later.", normalizedProvider(), selectedModel);
+                return new AiChatResponse(apiKeyUnavailableMessage(activeApiKey.source()), normalizedProvider(), selectedModel);
             }
             if (status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN) {
-                return new AiChatResponse("AI authentication failed. Please check the API configuration.", normalizedProvider(), selectedModel);
+                return new AiChatResponse(apiKeyUnavailableMessage(activeApiKey.source()), normalizedProvider(), selectedModel);
             }
             if (status != null && status.is5xxServerError()) {
-                return new AiChatResponse("AI service is temporarily unavailable. Please try again later.", normalizedProvider(), selectedModel);
+                return new AiChatResponse(apiKeyUnavailableMessage(activeApiKey.source()), normalizedProvider(), selectedModel);
             }
-            return new AiChatResponse("AI service request failed. Please try again later.", normalizedProvider(), selectedModel);
+            return new AiChatResponse(apiKeyUnavailableMessage(activeApiKey.source()), normalizedProvider(), selectedModel);
         } catch (ResourceAccessException ex) {
             // Timeouts typically surface as a ResourceAccessException; return a friendly message instead of the raw exception.
             if (isTimeout(ex)) {
-                return new AiChatResponse("AI service request timed out. Please try again later.", normalizedProvider(), selectedModel);
+                return new AiChatResponse(apiKeyUnavailableMessage(activeApiKey.source()), normalizedProvider(), selectedModel);
             }
             log.warn("AI network access failed for provider={}", normalizedProvider());
-            return new AiChatResponse("AI service is temporarily unavailable. Please try again later.", normalizedProvider(), selectedModel);
+            return new AiChatResponse(apiKeyUnavailableMessage(activeApiKey.source()), normalizedProvider(), selectedModel);
         } catch (RestClientException ex) {
             log.warn("AI client error for provider={}", normalizedProvider());
-            return new AiChatResponse("AI service is temporarily unavailable. Please try again later.", normalizedProvider(), selectedModel);
+            return new AiChatResponse(apiKeyUnavailableMessage(activeApiKey.source()), normalizedProvider(), selectedModel);
         }
     }
     // Called by GET /api/ai/models to return the safe set of model options to the frontend.
@@ -139,13 +149,85 @@ public class AiChatService {
         if (!StringUtils.hasText(aiProperties.getBaseUrl())) {
             return "AI base URL is not configured.";
         }
-        if (!StringUtils.hasText(aiProperties.getApiKey())) {
-            return "AI API key is not configured.";
-        }
         if (getAllowedModels().isEmpty()) {
             return "AI models are not configured.";
         }
         return null;
+    }
+
+    public ApiKeyStatus readApiKeyStatus(HttpSession session) {
+        String userApiKey = userAiKeyService.getUserApiKey(session);
+        String systemApiKey = aiProperties.getApiKey();
+        boolean userKeyConfigured = StringUtils.hasText(userApiKey);
+        boolean systemKeyConfigured = StringUtils.hasText(systemApiKey);
+        String source = userKeyConfigured ? KEY_SOURCE_USER : (systemKeyConfigured ? KEY_SOURCE_SYSTEM : KEY_SOURCE_NONE);
+        return new ApiKeyStatus(userKeyConfigured, systemKeyConfigured, source);
+    }
+
+    private ActiveApiKey resolveActiveApiKey(HttpSession session) {
+        String userApiKey = userAiKeyService.getUserApiKey(session);
+        String systemApiKey = aiProperties.getApiKey();
+
+        if (StringUtils.hasText(userApiKey)) {
+            return new ActiveApiKey(userApiKey.trim(), KEY_SOURCE_USER);
+        }
+        if (StringUtils.hasText(systemApiKey)) {
+            return new ActiveApiKey(systemApiKey.trim(), KEY_SOURCE_SYSTEM);
+        }
+        return new ActiveApiKey("", KEY_SOURCE_NONE);
+    }
+
+    private String apiKeyUnavailableMessage(String source) {
+        if (KEY_SOURCE_USER.equals(source)) {
+            return "Your AI API key is invalid or unavailable. Please check it in Settings.";
+        }
+        return "The system AI API key is unavailable. Please add your own API key in Settings.";
+    }
+
+    public static class ApiKeyStatus {
+        private final boolean userKeyConfigured;
+        private final boolean systemKeyConfigured;
+        private final String activeKeySource;
+
+        public ApiKeyStatus(boolean userKeyConfigured, boolean systemKeyConfigured, String activeKeySource) {
+            this.userKeyConfigured = userKeyConfigured;
+            this.systemKeyConfigured = systemKeyConfigured;
+            this.activeKeySource = activeKeySource;
+        }
+
+        public boolean isUserKeyConfigured() {
+            return userKeyConfigured;
+        }
+
+        public boolean isSystemKeyConfigured() {
+            return systemKeyConfigured;
+        }
+
+        public String getActiveKeySource() {
+            return activeKeySource;
+        }
+    }
+
+    private static class ActiveApiKey {
+        private final String value;
+        private final String source;
+
+        private ActiveApiKey(String value, String source) {
+            this.value = value;
+            this.source = source;
+        }
+
+        private String value() {
+            return value;
+        }
+
+        private String source() {
+            return source;
+        }
+
+        private boolean configured() {
+            return StringUtils.hasText(value);
+        }
     }
     // Trims, removes blanks, and de-duplicates the configured model list to produce the backend allow-list.
     private List<String> getAllowedModels() {
