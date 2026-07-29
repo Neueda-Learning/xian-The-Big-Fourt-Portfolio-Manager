@@ -20,6 +20,14 @@ export function DashboardHeader({
             </div>
             <div class="header-controls">
                 ${extraControls}
+                <button class="secondary-btn" id="add-portfolio-btn" type="button">
+                    <span class="btn-icon">${icons.plus}</span>
+                    Add Portfolio
+                </button>
+                <button class="secondary-btn" id="delete-portfolio-btn" type="button">
+                    <span class="btn-icon">${icons.trash}</span>
+                    Delete
+                </button>
                 ${
                     showAddAsset
                         ? `<button class="primary-btn" id="add-asset-btn" type="button">

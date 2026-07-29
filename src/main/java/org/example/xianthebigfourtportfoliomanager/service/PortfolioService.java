@@ -18,11 +18,25 @@ public class PortfolioService {
     }
 
     public List<portfolio> getAllPortfolios() {
-        return portfolioRepository.getAllPortfolios();
+        List<portfolio> portfolios = portfolioRepository.getAllPortfolios();
+        if (!portfolios.isEmpty()) {
+            BigDecimal sharedBalance = portfolios.get(0).getCashBalance();
+            for (portfolio p : portfolios) {
+                p.setCashBalance(sharedBalance);
+            }
+        }
+        return portfolios;
     }
 
     public portfolio getPortfolioById(int id) {
-        return portfolioRepository.getPortfolioById(id);
+        portfolio p = portfolioRepository.getPortfolioById(id);
+        if (p != null) {
+            List<portfolio> all = portfolioRepository.getAllPortfolios();
+            if (!all.isEmpty()) {
+                p.setCashBalance(all.get(0).getCashBalance());
+            }
+        }
+        return p;
     }
 
     public boolean existsById(int id) {
