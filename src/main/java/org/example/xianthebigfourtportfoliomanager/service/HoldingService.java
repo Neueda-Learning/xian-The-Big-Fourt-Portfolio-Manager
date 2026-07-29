@@ -1,6 +1,5 @@
 package org.example.xianthebigfourtportfoliomanager.service;
 
-<<<<<<< HEAD
 import org.example.xianthebigfourtportfoliomanager.entity.AssetType;
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
 import org.example.xianthebigfourtportfoliomanager.entity.Transaction;
@@ -14,19 +13,10 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
-=======
-import org.example.xianthebigfourtportfoliomanager.entity.Holding;
-import org.example.xianthebigfourtportfoliomanager.repository.HoldingRepository;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
 
 @Service
 public class HoldingService {
 
-<<<<<<< HEAD
     /**
      * Eren issue: adding the same ticker created duplicate holding rows and bypassed cash constraints.
      * Fix: merge same ticker/type positions, enforce cash checks on quantity changes, and mirror quantity deltas into transactions.
@@ -41,12 +31,6 @@ public class HoldingService {
     public HoldingService(HoldingRepository holdingRepository, TransactionRepository transactionRepository) {
         this.holdingRepository = holdingRepository;
         this.transactionRepository = transactionRepository;
-=======
-    private final HoldingRepository holdingRepository;
-
-    public HoldingService(HoldingRepository holdingRepository) {
-        this.holdingRepository = holdingRepository;
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     }
 
     public List<Holding> getHoldingsByPortfolioId(int portfolioId) {
@@ -63,7 +47,6 @@ public class HoldingService {
 
     @Transactional
     public Holding create(Holding holding) {
-<<<<<<< HEAD
         Holding existing = findExistingHolding(holding);
         if (existing != null) {
             BigDecimal addQty = sanitizePositive(holding.getQuantity());
@@ -104,14 +87,10 @@ public class HoldingService {
                     saved.getPurchasedata() == null ? null : saved.getPurchasedata().atStartOfDay());
         }
         return saved;
-=======
-        return holdingRepository.save(holding);
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     }
 
     @Transactional
     public Holding update(Holding holding) {
-<<<<<<< HEAD
         Holding existing = holding.getId() == null ? null : holdingRepository.getHoldingById(holding.getId());
         if (existing == null) {
             throw new IllegalArgumentException("Holding not found: " + holding.getId());
@@ -139,16 +118,12 @@ public class HoldingService {
             syncQuantityDeltaToTransactions(existing, updated);
         }
         return updated;
-=======
-        return holdingRepository.update(holding);
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     }
 
     @Transactional
     public int deleteById(int holdingId) {
         return holdingRepository.deleteById(holdingId);
     }
-<<<<<<< HEAD
 
     private void createMirrorBuyTransaction(Holding holding, BigDecimal quantity, BigDecimal tradePrice, LocalDateTime tradeDate) {
         if (holding.getId() == null || quantity == null || quantity.compareTo(ZERO) <= 0) {
@@ -234,6 +209,4 @@ public class HoldingService {
         }
         holdingRepository.update(cashHolding);
     }
-=======
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
 }

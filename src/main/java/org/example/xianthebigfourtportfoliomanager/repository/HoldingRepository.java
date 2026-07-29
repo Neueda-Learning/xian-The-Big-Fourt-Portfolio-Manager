@@ -3,7 +3,12 @@ package org.example.xianthebigfourtportfoliomanager.repository;
 import org.example.xianthebigfourtportfoliomanager.entity.AssetType;
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
+
+import java.sql.PreparedStatement;
+import java.sql.Statement;
 
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -63,25 +68,23 @@ public class HoldingRepository {
 
     public Holding save(Holding holding) {
         String sql = "insert into holding (portfolio_id, asset_type, ticker, quantity, purchase_price, purchase_date, currency) values (?, ?, ?, ?, ?, ?, ?)";
-        int rows = jdbcTemplate.update(
-                sql,
-                holding.getPortfolioId(),
-                holding.getAssetType().name(),
-                holding.getTicker(),
-                holding.getQuantity(),
-                holding.getPurchasePrice(),
-                holding.getPurchasedata(),
-                holding.getCurrency()
-        );
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        int rows = jdbcTemplate.update(con -> {
+            PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            ps.setInt(1, holding.getPortfolioId());
+            ps.setString(2, holding.getAssetType().name());
+            ps.setString(3, holding.getTicker());
+            ps.setBigDecimal(4, holding.getQuantity());
+            ps.setBigDecimal(5, holding.getPurchasePrice());
+            ps.setObject(6, holding.getPurchasedata());
+            ps.setString(7, holding.getCurrency());
+            return ps;
+        }, keyHolder);
         if (rows == 0) {
             return null;
         }
-
-        Integer id = jdbcTemplate.queryForObject("select LAST_INSERT_ID()", Integer.class);
-        if (id == null) {
-            return holding;
-        }
-        return getHoldingById(id);
+        Number key = keyHolder.getKey();
+        return key == null ? holding : getHoldingById(key.intValue());
     }
 
     public Holding update(Holding holding) {

@@ -1,15 +1,10 @@
 package org.example.xianthebigfourtportfoliomanager.service;
 
 import org.example.xianthebigfourtportfoliomanager.entity.Holding;
-<<<<<<< HEAD
 import org.example.xianthebigfourtportfoliomanager.entity.priceHistory;
 import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
 import org.example.xianthebigfourtportfoliomanager.repository.HoldingRepository;
 import org.example.xianthebigfourtportfoliomanager.repository.PriceHistoryRepository;
-=======
-import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
-import org.example.xianthebigfourtportfoliomanager.repository.HoldingRepository;
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
 import org.example.xianthebigfourtportfoliomanager.repository.PortfolioRepository;
 import org.springframework.stereotype.Service;
 
@@ -21,7 +16,6 @@ import java.util.List;
 @Service
 public class PerformanceService {
 
-<<<<<<< HEAD
     /**
      * Eren issue: gain/loss could remain zero when live quotes failed, because valuation fell back too quickly to purchase cost.
      * Fix: resolve current price with this order: local latest close -> Yahoo quote -> purchase price.
@@ -31,25 +25,15 @@ public class PerformanceService {
     private final PortfolioRepository portfolioRepository;
     private final HoldingRepository holdingRepository;
     private final PriceHistoryRepository priceHistoryRepository;
-=======
-    private final PortfolioRepository portfolioRepository;
-    private final HoldingRepository holdingRepository;
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     private final YahooFinanceService yahooFinanceService;
 
     public PerformanceService(PortfolioRepository portfolioRepository,
                               HoldingRepository holdingRepository,
-<<<<<<< HEAD
                               PriceHistoryRepository priceHistoryRepository,
                               YahooFinanceService yahooFinanceService) {
         this.portfolioRepository = portfolioRepository;
         this.holdingRepository = holdingRepository;
         this.priceHistoryRepository = priceHistoryRepository;
-=======
-                              YahooFinanceService yahooFinanceService) {
-        this.portfolioRepository = portfolioRepository;
-        this.holdingRepository = holdingRepository;
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
         this.yahooFinanceService = yahooFinanceService;
     }
 
@@ -63,11 +47,7 @@ public class PerformanceService {
         List<HoldingDetail> details = new ArrayList<>();
 
         for (Holding h : holdings) {
-<<<<<<< HEAD
             BigDecimal currentPrice = resolveCurrentPrice(h);
-=======
-            BigDecimal currentPrice = yahooFinanceService.getCurrentPrice(h.getTicker());
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
             if (currentPrice == null) currentPrice = h.getPurchasePrice();
             if (currentPrice == null) currentPrice = BigDecimal.ZERO;
 
@@ -94,7 +74,6 @@ public class PerformanceService {
             totalMarketValue, totalCost, totalReturn, returnRate, details);
     }
 
-<<<<<<< HEAD
     private BigDecimal resolveCurrentPrice(Holding holding) {
         if (holding == null) {
             return null;
@@ -117,8 +96,6 @@ public class PerformanceService {
         return yahooFinanceService.getCurrentPrice(ticker);
     }
 
-=======
->>>>>>> dd09e73e365a435c4c9bed5aa08e68d924147e41
     public static class PerformanceResult {
         private int portfolioId;
         private String portfolioName;

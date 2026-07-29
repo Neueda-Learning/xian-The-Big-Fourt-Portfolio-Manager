@@ -2,8 +2,12 @@ package org.example.xianthebigfourtportfoliomanager.repository;
 
 import org.example.xianthebigfourtportfoliomanager.entity.portfolio;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.sql.PreparedStatement;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.List;
 
@@ -49,16 +53,18 @@ public class PortfolioRepository {
 
     public portfolio save(portfolio portf) {
         String sql = "insert into portfolio (pro_name, pro_description) values (?, ?)";
-        int rows = jdbcTemplate.update(sql, portf.getName(), portf.getDescription());
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        int rows = jdbcTemplate.update(con -> {
+            PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, portf.getName());
+            ps.setString(2, portf.getDescription());
+            return ps;
+        }, keyHolder);
         if (rows == 0) {
             return null;
         }
-
-        Integer id = jdbcTemplate.queryForObject("select LAST_INSERT_ID()", Integer.class);
-        if (id == null) {
-            return portf;
-        }
-        return getPortfolioById(id);
+        Number key = keyHolder.getKey();
+        return key == null ? portf : getPortfolioById(key.intValue());
     }
 
     public portfolio update(portfolio portf) {
@@ -78,4 +84,3 @@ public class PortfolioRepository {
         return count != null && count.intValue() > 0;
     }
 }
-

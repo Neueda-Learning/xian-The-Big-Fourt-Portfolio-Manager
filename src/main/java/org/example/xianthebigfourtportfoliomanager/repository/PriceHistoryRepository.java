@@ -2,9 +2,13 @@ package org.example.xianthebigfourtportfoliomanager.repository;
 
 import org.example.xianthebigfourtportfoliomanager.entity.priceHistory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Date;
+import java.sql.PreparedStatement;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.List;
@@ -73,14 +77,16 @@ public class PriceHistoryRepository {
 
     public priceHistory save(priceHistory priceHistory) {
         String sql = "insert into price_history (ticker, price_date, close_price) values (?, ?, ?)";
-        int rows = jdbcTemplate.update(sql, priceHistory.getTicker(), priceHistory.getPriceDate(), priceHistory.getCloseprice());
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        int rows = jdbcTemplate.update(con -> {
+            PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, priceHistory.getTicker());
+            ps.setObject(2, priceHistory.getPriceDate());
+            ps.setBigDecimal(3, priceHistory.getCloseprice());
+            return ps;
+        }, keyHolder);
         if (rows == 0) {
             return null;
-        }
-
-        Integer id = jdbcTemplate.queryForObject("select LAST_INSERT_ID()", Integer.class);
-        if (id == null) {
-            return priceHistory;
         }
         return getPriceByTickerAndDate(priceHistory.getTicker(), priceHistory.getPriceDate());
     }
