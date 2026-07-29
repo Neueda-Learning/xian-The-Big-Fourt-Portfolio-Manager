@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class PerformanceService {
@@ -42,11 +43,16 @@ public class PerformanceService {
         if (portf == null) return null;
 
         List<Holding> holdings = holdingRepository.getHoldingsByPortfolioId(portfolioId);
-        BigDecimal totalMarketValue = BigDecimal.ZERO;
+        BigDecimal holdingsMarketValue = BigDecimal.ZERO;
         BigDecimal totalCost = BigDecimal.ZERO;
         List<HoldingDetail> details = new ArrayList<>();
 
         for (Holding h : holdings) {
+            if (h.getAssetType() == org.example.xianthebigfourtportfoliomanager.entity.AssetType.CASH
+                    || "CASH".equalsIgnoreCase(Objects.toString(h.getTicker(), ""))) {
+                continue;
+            }
+
             BigDecimal currentPrice = resolveCurrentPrice(h);
             if (currentPrice == null) currentPrice = h.getPurchasePrice();
             if (currentPrice == null) currentPrice = BigDecimal.ZERO;
@@ -55,7 +61,7 @@ public class PerformanceService {
             BigDecimal cost = h.getQuantity().multiply(
                 h.getPurchasePrice() != null ? h.getPurchasePrice() : BigDecimal.ZERO
             );
-            totalMarketValue = totalMarketValue.add(marketValue);
+            holdingsMarketValue = holdingsMarketValue.add(marketValue);
             totalCost = totalCost.add(cost);
 
             details.add(new HoldingDetail(
@@ -65,13 +71,17 @@ public class PerformanceService {
             ));
         }
 
-        BigDecimal totalReturn = totalMarketValue.subtract(totalCost);
-        BigDecimal returnRate = totalCost.compareTo(BigDecimal.ZERO) > 0
-            ? totalReturn.divide(totalCost, 4, RoundingMode.HALF_UP).multiply(new BigDecimal("100"))
+        BigDecimal cashBalance = portf.getCashBalance() == null ? BigDecimal.ZERO : portf.getCashBalance();
+        BigDecimal initialCash = portf.getInitialCash() == null ? BigDecimal.ZERO : portf.getInitialCash();
+        BigDecimal totalPortfolioValue = cashBalance.add(holdingsMarketValue);
+
+        BigDecimal totalReturn = totalPortfolioValue.subtract(initialCash);
+        BigDecimal returnRate = initialCash.compareTo(BigDecimal.ZERO) > 0
+            ? totalReturn.divide(initialCash, 4, RoundingMode.HALF_UP).multiply(new BigDecimal("100"))
             : BigDecimal.ZERO;
 
         return new PerformanceResult(portfolioId, portf.getName(),
-            totalMarketValue, totalCost, totalReturn, returnRate, details);
+            totalPortfolioValue, totalCost, totalReturn, returnRate, details, cashBalance, holdingsMarketValue);
     }
 
     private BigDecimal resolveCurrentPrice(Holding holding) {
@@ -82,10 +92,6 @@ public class PerformanceService {
         String ticker = holding.getTicker();
         if (ticker == null || ticker.isBlank()) {
             return null;
-        }
-
-        if ("CASH".equalsIgnoreCase(ticker)) {
-            return BigDecimal.ONE;
         }
 
         priceHistory latest = priceHistoryRepository.getLatestPriceByTicker(ticker.toUpperCase());
@@ -104,13 +110,17 @@ public class PerformanceService {
         private BigDecimal totalReturn;
         private BigDecimal returnRate;
         private List<HoldingDetail> holdingsDetail;
+        private BigDecimal cashBalance;
+        private BigDecimal holdingsMarketValue;
 
         public PerformanceResult() {}
 
         public PerformanceResult(int portfolioId, String portfolioName,
                                  BigDecimal totalMarketValue, BigDecimal totalCost,
                                  BigDecimal totalReturn, BigDecimal returnRate,
-                                 List<HoldingDetail> holdingsDetail) {
+                                 List<HoldingDetail> holdingsDetail,
+                                 BigDecimal cashBalance,
+                                 BigDecimal holdingsMarketValue) {
             this.portfolioId = portfolioId;
             this.portfolioName = portfolioName;
             this.totalMarketValue = totalMarketValue;
@@ -118,6 +128,8 @@ public class PerformanceService {
             this.totalReturn = totalReturn;
             this.returnRate = returnRate;
             this.holdingsDetail = holdingsDetail;
+            this.cashBalance = cashBalance;
+            this.holdingsMarketValue = holdingsMarketValue;
         }
 
         public int getPortfolioId() { return portfolioId; }
@@ -134,6 +146,10 @@ public class PerformanceService {
         public void setReturnRate(BigDecimal returnRate) { this.returnRate = returnRate; }
         public List<HoldingDetail> getHoldingsDetail() { return holdingsDetail; }
         public void setHoldingsDetail(List<HoldingDetail> holdingsDetail) { this.holdingsDetail = holdingsDetail; }
+        public BigDecimal getCashBalance() { return cashBalance; }
+        public void setCashBalance(BigDecimal cashBalance) { this.cashBalance = cashBalance; }
+        public BigDecimal getHoldingsMarketValue() { return holdingsMarketValue; }
+        public void setHoldingsMarketValue(BigDecimal holdingsMarketValue) { this.holdingsMarketValue = holdingsMarketValue; }
     }
 
     public static class HoldingDetail {
