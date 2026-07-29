@@ -270,11 +270,9 @@ async function loadInitialData() {
 function computeMetrics() {
     const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
     const totalCost = state.holdings.reduce((sum, item) => sum + item.quantity * item.avgPrice, 0);
-    const totalGain = totalValue - totalCost;
-    const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
-    const cashBalance = state.holdings
-        .filter((item) => item.type === "Cash")
-        .reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
+    const totalGain = Number(state.performance?.totalReturn ?? (totalValue - totalCost));
+    const totalGainPct = Number(state.performance?.returnRate ?? (totalCost > 0 ? (totalGain / totalCost) * 100 : 0));
+    const cashBalance = Number(state.performance?.cashBalance ?? 0);
 
     const selectedData = getPerformanceDataByRange(state.selectedRange);
     const lastValue = selectedData[selectedData.length - 1]?.value || 0;
