@@ -47,6 +47,26 @@ public class TransactionRepository {
         }, holdingId);
     }
 
+    public List<Transaction> getTransactionsByPortfolioId(int portfolioId) {
+        String sql = """
+                select t.* from `transaction` t
+                inner join holding h on h.id = t.holding_id
+                where h.portfolio_id = ?
+                order by t.trade_date desc, t.id desc
+                """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Timestamp tradeDate = rs.getTimestamp("trade_date");
+            return new Transaction(
+                    rs.getInt("id"),
+                    rs.getInt("holding_id"),
+                    rs.getString("type"),
+                    rs.getBigDecimal("quantity"),
+                    rs.getBigDecimal("price"),
+                    tradeDate == null ? null : tradeDate.toLocalDateTime()
+            );
+        }, portfolioId);
+    }
+
     public Transaction save(Transaction transaction) {
         String sql = "insert into `transaction` (holding_id, type, quantity, price, trade_date) values (?, ?, ?, ?, ?)";
         int rows = jdbcTemplate.update(

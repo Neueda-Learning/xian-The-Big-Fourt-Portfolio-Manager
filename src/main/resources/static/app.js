@@ -36,6 +36,7 @@ const state = {
     activeNav: "Dashboard",
     darkMode: savedTheme === "dark",
     editingTransactionId: null,
+    tradeDraft: null,
     priceMessage: "",
     transactionMessage: ""
 };
@@ -221,13 +222,8 @@ async function refreshPortfolioData() {
     state.holdings = state.holdingsRaw.map((item) => normalizeHolding(item, detailMap));
 
     const holdingMap = new Map(state.holdings.map((item) => [item.id, item]));
-    const txResult = await Promise.all(
-        state.holdings.map(async (holding) => {
-            const rows = await apiRequest(`/transactions/holding/${holding.id}`);
-            return Array.isArray(rows) ? rows : [];
-        })
-    );
-    const flattened = txResult.flat();
+    const txResult = await apiRequest(`/portfolios/${state.selectedPortfolioId}/transactions`);
+    const flattened = Array.isArray(txResult) ? txResult : [];
     state.transactions = flattened
         .map((item) => normalizeTransaction(item, holdingMap))
         .sort((a, b) => new Date(b.dateRaw).getTime() - new Date(a.dateRaw).getTime());
@@ -474,22 +470,24 @@ function renderSettingsPanel() {
 }
 
 function renderTransactionManager() {
+    const selectedHoldingId = state.tradeDraft?.holdingId;
+    const selectedType = state.tradeDraft?.type || "BUY";
     const holdingOptions = state.holdings
-        .map((holding) => `<option value="${holding.id}">${holding.ticker} (Holding #${holding.id})</option>`)
+        .map((holding) => `<option value="${holding.id}" ${selectedHoldingId === holding.id ? "selected" : ""}>${holding.ticker} (Holding #${holding.id})</option>`)
         .join("");
 
     return `
         <article class="card info-panel">
             <h2>Transaction Manager</h2>
-            <p>Create, edit, and delete transaction records for the selected portfolio.</p>
+            <p>Create BUY/SELL transaction records for the selected portfolio. Transactions are immutable once created.</p>
             <form id="transaction-form" class="manager-grid" novalidate>
                 <label>Holding</label>
                 <select name="holdingId" required>${holdingOptions}</select>
 
                 <label>Type</label>
                 <select name="type" required>
-                    <option value="BUY">BUY</option>
-                    <option value="SELL">SELL</option>
+                    <option value="BUY" ${selectedType === "BUY" ? "selected" : ""}>BUY</option>
+                    <option value="SELL" ${selectedType === "SELL" ? "selected" : ""}>SELL</option>
                 </select>
 
                 <label>Quantity</label>
@@ -516,7 +514,6 @@ function renderTransactionManager() {
                         <th>Qty</th>
                         <th>Price</th>
                         <th>Date</th>
-                        <th>Actions</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -531,9 +528,6 @@ function renderTransactionManager() {
                                 <td>${item.quantity}</td>
                                 <td>${formatCurrency(item.price)}</td>
                                 <td>${toInputSafeText(item.date)}</td>
-                                <td>
-                                    <button class="icon-btn small" type="button" data-tx-delete="${item.id}">${icons.trash}</button>
-                                </td>
                             </tr>
                         `
                             )
@@ -910,10 +904,14 @@ function bindEvents() {
                     price: Number(formData.get("price")),
                     tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
                 };
-                await apiRequest("/savetransaction", {
+                const tradePath = payload.type === "SELL"
+                    ? `/portfolios/${state.selectedPortfolioId}/trades/sell`
+                    : `/portfolios/${state.selectedPortfolioId}/trades/buy`;
+                await apiRequest(tradePath, {
                     method: "POST",
                     body: JSON.stringify(payload)
                 });
+                state.tradeDraft = null;
                 state.transactionMessage = "Transaction saved.";
                 await refreshPortfolioData();
                 render();
@@ -923,20 +921,6 @@ function bindEvents() {
             }
         });
     }
-
-    document.querySelectorAll("[data-tx-delete]").forEach((button) => {
-        button.addEventListener("click", async () => {
-            try {
-                await apiRequest(`/delete/transaction/${button.dataset.txDelete}`, { method: "DELETE" });
-                state.transactionMessage = "Transaction deleted.";
-                await refreshPortfolioData();
-                render();
-            } catch (error) {
-                state.transactionMessage = error.message;
-                render();
-            }
-        });
-    });
 
     const priceForm = document.getElementById("price-form");
     if (priceForm) {
@@ -1019,6 +1003,24 @@ function bindEvents() {
             lastFocusedElement = document.activeElement;
             state.editingAssetId = Number(button.dataset.editId);
             state.addModalOpen = true;
+            render();
+        });
+    });
+
+    document.querySelectorAll("[data-buy-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+            state.tradeDraft = { holdingId: Number(button.dataset.buyId), type: "BUY" };
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Create BUY transaction (Buy More).";
+            render();
+        });
+    });
+
+    document.querySelectorAll("[data-sell-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+            state.tradeDraft = { holdingId: Number(button.dataset.sellId), type: "SELL" };
+            state.activeNav = "Transactions";
+            state.transactionMessage = "Create SELL transaction.";
             render();
         });
     });

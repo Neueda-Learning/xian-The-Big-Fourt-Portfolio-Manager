@@ -48,6 +48,31 @@ public class TransactionService {
         return transactionRepository.getTransactionById(id);
     }
 
+    public List<Transaction> getTransactionsByPortfolioId(int portfolioId) {
+        requirePortfolio(portfolioId);
+        return transactionRepository.getTransactionsByPortfolioId(portfolioId);
+    }
+
+    @Transactional
+    public Transaction buy(int portfolioId, Transaction transaction) {
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction payload is required.");
+        }
+        transaction.setType(TX_BUY);
+        ensureHoldingBelongsToPortfolio(transaction.getHoldingId(), portfolioId);
+        return create(transaction);
+    }
+
+    @Transactional
+    public Transaction sell(int portfolioId, Transaction transaction) {
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction payload is required.");
+        }
+        transaction.setType(TX_SELL);
+        ensureHoldingBelongsToPortfolio(transaction.getHoldingId(), portfolioId);
+        return create(transaction);
+    }
+
     @Transactional
     public Transaction create(Transaction transaction) {
         Transaction normalized = normalizeTransaction(transaction);
@@ -199,6 +224,16 @@ public class TransactionService {
             throw new IllegalArgumentException("Direct CASH transactions are not supported. Use BUY/SELL on non-cash holdings.");
         }
         return holding;
+    }
+
+    private void ensureHoldingBelongsToPortfolio(Integer holdingId, int portfolioId) {
+        if (holdingId == null) {
+            throw new IllegalArgumentException("holdingId is required.");
+        }
+        Holding holding = requireAssetHolding(holdingId);
+        if (holding.getPortfolioId() == null || holding.getPortfolioId() != portfolioId) {
+            throw new IllegalArgumentException("Holding does not belong to the target portfolio.");
+        }
     }
 
     private portfolio requirePortfolio(int portfolioId) {
