@@ -13,9 +13,12 @@ import java.util.List;
 public class HoldingService {
 
     private final HoldingRepository holdingRepository;
+    private final PortfolioSnapshotService portfolioSnapshotService;
 
-    public HoldingService(HoldingRepository holdingRepository) {
+    public HoldingService(HoldingRepository holdingRepository,
+                          PortfolioSnapshotService portfolioSnapshotService) {
         this.holdingRepository = holdingRepository;
+        this.portfolioSnapshotService = portfolioSnapshotService;
     }
 
     public List<Holding> getHoldingsByPortfolioId(int portfolioId) {
@@ -41,8 +44,11 @@ public class HoldingService {
             throw new IllegalArgumentException("Holding not found: " + holdingId);
         }
 
-        // In the current schema, purchase_price is used as the stored manual price.
-        holding.setPurchasePrice(currentPrice.setScale(4, RoundingMode.HALF_UP));
-        return holdingRepository.update(holding);
+        holding.setCurrentPrice(currentPrice.setScale(4, RoundingMode.HALF_UP));
+        Holding updated = holdingRepository.update(holding);
+        if (updated != null && updated.getPortfolioId() != null) {
+            portfolioSnapshotService.captureToday(updated.getPortfolioId());
+        }
+        return updated;
     }
 }

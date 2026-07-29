@@ -7,6 +7,8 @@ import org.springframework.web.client.RestTemplate;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class YahooFinanceService {
@@ -46,16 +48,53 @@ public class YahooFinanceService {
         if (response == null || response.isBlank()) return null;
         try {
             String trimmed = response.trim();
-            if (trimmed.startsWith("{")) {
-                int idx = trimmed.indexOf(":");
-                if (idx > 0) {
-                    String val = trimmed.substring(idx + 1).replaceAll("[^0-9.]", "");
-                    return new BigDecimal(val);
+            if (trimmed.matches("^-?\\d+(\\.\\d+)?$")) {
+                return new BigDecimal(trimmed);
+            }
+
+            BigDecimal keyed = extractByKnownKeys(trimmed);
+            if (keyed != null) {
+                return keyed;
+            }
+
+            String body = extractJsonStringField(trimmed, "body");
+            if (body != null && !body.isBlank()) {
+                String unescapedBody = body.replace("\\\"", "\"");
+                BigDecimal bodyPrice = parsePrice(unescapedBody);
+                if (bodyPrice != null) {
+                    return bodyPrice;
                 }
             }
-            return new BigDecimal(trimmed);
-        } catch (NumberFormatException e) {
+
+            return null;
+        } catch (Exception e) {
             return null;
         }
+    }
+
+    private BigDecimal extractByKnownKeys(String payload) {
+        Pattern pattern = Pattern.compile("\\\"(?:price|regularMarketPrice|close|c|lastPrice)\\\"\\s*:\\s*\\\"?(-?\\d+(?:\\.\\d+)?)\\\"?");
+        Matcher matcher = pattern.matcher(payload);
+        while (matcher.find()) {
+            String raw = matcher.group(1);
+            try {
+                BigDecimal value = new BigDecimal(raw);
+                if (value.compareTo(BigDecimal.ZERO) > 0) {
+                    return value;
+                }
+            } catch (NumberFormatException ignored) {
+                // Continue trying other matches.
+            }
+        }
+        return null;
+    }
+
+    private String extractJsonStringField(String payload, String key) {
+        Pattern pattern = Pattern.compile("\\\"" + Pattern.quote(key) + "\\\"\\s*:\\s*\\\"(.*?)\\\"");
+        Matcher matcher = pattern.matcher(payload);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
     }
 }

@@ -22,7 +22,8 @@ public class TransactionRepository {
             Timestamp tradeDate = rs.getTimestamp("trade_date");
             return new Transaction(
                     rs.getInt("id"),
-                    rs.getInt("holding_id"),
+                    rs.getObject("portfolio_id", Integer.class),
+                    rs.getObject("holding_id", Integer.class),
                     rs.getString("type"),
                     rs.getBigDecimal("quantity"),
                     rs.getBigDecimal("price"),
@@ -38,7 +39,8 @@ public class TransactionRepository {
             Timestamp tradeDate = rs.getTimestamp("trade_date");
             return new Transaction(
                     rs.getInt("id"),
-                    rs.getInt("holding_id"),
+                    rs.getObject("portfolio_id", Integer.class),
+                    rs.getObject("holding_id", Integer.class),
                     rs.getString("type"),
                     rs.getBigDecimal("quantity"),
                     rs.getBigDecimal("price"),
@@ -50,15 +52,15 @@ public class TransactionRepository {
     public List<Transaction> getTransactionsByPortfolioId(int portfolioId) {
         String sql = """
                 select t.* from `transaction` t
-                inner join holding h on h.id = t.holding_id
-                where h.portfolio_id = ?
+                where t.portfolio_id = ?
                 order by t.trade_date desc, t.id desc
                 """;
         return jdbcTemplate.query(sql, (rs, rowNum) -> {
             Timestamp tradeDate = rs.getTimestamp("trade_date");
             return new Transaction(
                     rs.getInt("id"),
-                    rs.getInt("holding_id"),
+                    rs.getObject("portfolio_id", Integer.class),
+                    rs.getObject("holding_id", Integer.class),
                     rs.getString("type"),
                     rs.getBigDecimal("quantity"),
                     rs.getBigDecimal("price"),
@@ -68,9 +70,10 @@ public class TransactionRepository {
     }
 
     public Transaction save(Transaction transaction) {
-        String sql = "insert into `transaction` (holding_id, type, quantity, price, trade_date) values (?, ?, ?, ?, ?)";
+        String sql = "insert into `transaction` (portfolio_id, holding_id, type, quantity, price, trade_date) values (?, ?, ?, ?, ?, ?)";
         int rows = jdbcTemplate.update(
                 sql,
+                transaction.getPortfolioId(),
                 transaction.getHoldingId(),
                 transaction.getType(),
                 transaction.getQuantity(),
@@ -89,9 +92,10 @@ public class TransactionRepository {
     }
 
     public Transaction update(Transaction transaction) {
-        String sql = "update `transaction` set holding_id = ?, type = ?, quantity = ?, price = ?, trade_date = ? where id = ?";
+        String sql = "update `transaction` set portfolio_id = ?, holding_id = ?, type = ?, quantity = ?, price = ?, trade_date = ? where id = ?";
         jdbcTemplate.update(
                 sql,
+            transaction.getPortfolioId(),
                 transaction.getHoldingId(),
                 transaction.getType(),
                 transaction.getQuantity(),

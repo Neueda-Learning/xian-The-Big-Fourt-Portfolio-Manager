@@ -1,6 +1,8 @@
 package org.example.xianthebigfourtportfoliomanager.controller;
 
 import org.example.xianthebigfourtportfoliomanager.entity.Transaction;
+import org.example.xianthebigfourtportfoliomanager.entity.CashDepositRequest;
+import org.example.xianthebigfourtportfoliomanager.entity.TradeRequest;
 import org.example.xianthebigfourtportfoliomanager.service.TransactionService;
 import org.springframework.web.bind.annotation.*;
 
@@ -47,13 +49,18 @@ public class TransactionController {
     }
 
     @PostMapping("/portfolios/{id}/trades/buy")
-    public Transaction buy(@PathVariable int id, @RequestBody Transaction transaction) {
-        return service.buy(id, transaction);
+    public Transaction buy(@PathVariable int id, @RequestBody TradeRequest request) {
+        return service.buy(id, request);
     }
 
     @PostMapping("/portfolios/{id}/trades/sell")
-    public Transaction sell(@PathVariable int id, @RequestBody Transaction transaction) {
-        return service.sell(id, transaction);
+    public Transaction sell(@PathVariable int id, @RequestBody TradeRequest request) {
+        return service.sell(id, request);
+    }
+
+    @PostMapping("/portfolios/{id}/cash/deposit")
+    public Transaction depositCash(@PathVariable int id, @RequestBody CashDepositRequest request) {
+        return service.depositCash(id, request);
     }
 
     @PatchMapping("/transaction/{id}")

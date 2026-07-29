@@ -9,7 +9,6 @@ import { HoldingsTable } from "./js/components/HoldingsTable.js";
 import { RecentTransactions } from "./js/components/RecentTransactions.js";
 import { AddAssetModal } from "./js/components/AddAssetModal.js";
 import { icons } from "./js/components/icons.js";
-import { generatePerformanceData } from "./js/data/mockData.js";
 import { compactDate, formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "./js/utils/formatters.js";
 
 const appRoot = document.getElementById("app");
@@ -21,8 +20,10 @@ const state = {
     holdingsRaw: [],
     holdings: [],
     transactions: [],
+    snapshots: [],
     priceHistory: [],
     performance: null,
+    summary: null,
     performanceData: [],
     allocationData: [],
     loading: true,
@@ -55,8 +56,8 @@ let lastFocusedElement;
 let escapeHandlerBound = false;
 
 /*
- * Eren issue: frontend initially used local mock state and chart slicing that masked real backend updates.
- * Fix: migrate to API-driven state loading/refresh and make time-range chart data react to real dates and post-close trades.
+ * Eren issue: performance curve looked accurate but was inferred from single-ticker history or mock fallback.
+ * Fix: only render curve from real portfolio-level points; keep single-point display until snapshot history exists.
  * Reviewer: GitHub Copilot (GPT-5.3-Codex).
  */
 
@@ -159,19 +160,24 @@ function normalizeHolding(rawHolding, detailMap) {
         name: ticker,
         type,
         quantity: Number(rawHolding.quantity || 0),
-        avgPrice: Number(rawHolding.purchasePrice || 0),
-        currentPrice: Number(detail?.currentPrice || rawHolding.purchasePrice || 0),
+        avgPrice: Number(rawHolding.averagePrice || 0),
+        currentPrice: Number(detail?.currentPrice || rawHolding.currentPrice || 0),
+        realizedPnl: Number(detail?.realizedPnl || 0),
+        unrealizedPnl: Number(detail?.unrealizedPnl || 0),
+        totalPnl: Number(detail?.totalPnl || 0),
         currency: rawHolding.currency || "USD",
         purchasedata: rawHolding.purchasedata
     };
 }
 
 function normalizeTransaction(rawTx, holdingMap) {
-    const holdingTicker = holdingMap.get(rawTx.holdingId)?.ticker || `Holding-${rawTx.holdingId}`;
+    const isCashTx = rawTx.holdingId == null;
+    const holdingTicker = isCashTx ? "CASH" : (holdingMap.get(rawTx.holdingId)?.ticker || `Holding-${rawTx.holdingId}`);
     const txType = String(rawTx.type || "BUY").toUpperCase();
     const quantity = Number(rawTx.quantity || 0);
     const price = Number(rawTx.price || 0);
-    const amount = txType === "SELL" ? quantity * price : -(quantity * price);
+    const amount = txType === "SELL" || txType === "IN" ? quantity * price : -(quantity * price);
+    const action = txType === "SELL" ? "Sell" : txType === "IN" ? "Deposit" : "Buy";
 
     return {
         id: rawTx.id,
@@ -182,9 +188,9 @@ function normalizeTransaction(rawTx, holdingMap) {
             year: "numeric"
         }).format(new Date(rawTx.tradeDate)),
         dateRaw: rawTx.tradeDate,
-        type: holdingMap.get(rawTx.holdingId)?.type || "Stock",
+        type: isCashTx ? "Cash" : (holdingMap.get(rawTx.holdingId)?.type || "Stock"),
         asset: holdingTicker,
-        action: txType === "SELL" ? "Sell" : "Buy",
+        action,
         txType,
         quantity,
         price,
@@ -192,87 +198,61 @@ function normalizeTransaction(rawTx, holdingMap) {
     };
 }
 
-function buildFallbackPerformanceSeries(totalValue) {
-    const generated = generatePerformanceData(120);
-    const baseline = generated[generated.length - 1]?.value || 1;
-    const target = totalValue > 0 ? totalValue : 100000;
-    return generated.map((item) => ({
-        date: item.date,
-        value: Number(((item.value / baseline) * target).toFixed(2))
-    }));
-}
-
 function rebuildAllocationData() {
-    const total = state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
-    if (total <= 0) {
+    const allocation = state.summary?.allocation;
+    if (!Array.isArray(allocation) || allocation.length === 0) {
         state.allocationData = [];
         return;
     }
 
     const colorMap = {
-        Stock: "#3b82f6",
-        Bond: "#22c55e",
-        Cash: "#f59e0b"
+        STOCK: "#1d4ed8",
+        BOND: "#059669",
+        CASH: "#d97706"
     };
 
-    const grouped = new Map();
-    state.holdings.forEach((item) => {
-        const value = item.quantity * item.currentPrice;
-        grouped.set(item.type, (grouped.get(item.type) || 0) + value);
+    state.allocationData = allocation.map((item) => {
+        const key = String(item.assetType || "OTHER").toUpperCase();
+        const label = key.charAt(0) + key.slice(1).toLowerCase();
+        return {
+            label: `${label}s`,
+            value: Number(item.percentage || 0),
+            color: colorMap[key] || "#6b7280"
+        };
     });
-
-    state.allocationData = Array.from(grouped.entries()).map(([label, value]) => ({
-        label: `${label}s`,
-        value: Number(((value / total) * 100).toFixed(1)),
-        color: colorMap[label] || "#8b5cf6"
-    }));
 }
 
 function buildPerformanceSeries() {
-    if (state.priceHistory.length > 1) {
-        const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
-        const ordered = [...state.priceHistory].sort((a, b) => new Date(a.priceDate).getTime() - new Date(b.priceDate).getTime());
-        const lastPriceDate = new Date(`${ordered[ordered.length - 1].priceDate}T23:59:59`);
-        const holdingPriceMap = new Map(state.holdings.map((item) => [item.id, Number(item.currentPrice || item.avgPrice || 0)]));
-        const postCloseImpact = state.transactions
-            .filter((tx) => new Date(tx.dateRaw).getTime() > lastPriceDate.getTime())
-            .reduce((sum, tx) => {
-                const qty = Number(tx.quantity || 0);
-                const tradePrice = Number(tx.price || 0);
-                const currentPrice = Number(holdingPriceMap.get(tx.holdingId) || tradePrice);
-                if (String(tx.txType).toUpperCase() === "SELL") {
-                    return sum + qty * (tradePrice - currentPrice);
-                }
-                return sum + qty * (currentPrice - tradePrice);
-            }, 0);
-        const referenceTotal = totalValue - postCloseImpact;
-        const lastClose = Number(ordered[ordered.length - 1]?.closeprice || 0);
+    const orderedSnapshots = [...state.snapshots]
+        .sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
 
-        state.performanceData = ordered.map((item) => {
-            const close = Number(item.closeprice || 0);
-            const scaled = lastClose > 0 ? (close / lastClose) * referenceTotal : referenceTotal;
-            return {
-                date: new Date(`${item.priceDate}T16:00:00`),
-                value: Number(scaled.toFixed(2))
-            };
-        });
+    if (orderedSnapshots.length > 0) {
+        state.performanceData = orderedSnapshots.map((item) => ({
+            date: new Date(`${item.snapshotDate}T16:00:00`),
+            value: Number(item.totalValue || 0)
+        }));
 
-        const now = new Date();
-        const latestPoint = state.performanceData[state.performanceData.length - 1];
-        if (!latestPoint || latestPoint.date.toDateString() !== now.toDateString()) {
+        const totalValue = Number(state.performance?.totalMarketValue || 0);
+        const lastPoint = state.performanceData[state.performanceData.length - 1];
+        const today = new Date().toDateString();
+        if (!lastPoint || new Date(lastPoint.date).toDateString() !== today) {
             state.performanceData.push({
-                date: now,
+                date: new Date(),
                 value: Number(totalValue.toFixed(2))
             });
         } else {
-            latestPoint.value = Number(totalValue.toFixed(2));
+            lastPoint.value = Number(totalValue.toFixed(2));
         }
-
         return;
     }
 
-    const totalValue = state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
-    state.performanceData = buildFallbackPerformanceSeries(totalValue);
+    const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
+    state.performanceData = [
+        {
+            date: new Date(),
+            value: Number(totalValue.toFixed(2))
+        }
+    ];
 }
 
 async function refreshPortfolioData() {
@@ -280,9 +260,11 @@ async function refreshPortfolioData() {
         state.holdingsRaw = [];
         state.holdings = [];
         state.transactions = [];
+        state.snapshots = [];
         state.priceHistory = [];
         state.performance = null;
-        state.performanceData = buildFallbackPerformanceSeries(0);
+        state.summary = null;
+        state.performanceData = [];
         state.allocationData = [];
         return;
     }
@@ -291,15 +273,20 @@ async function refreshPortfolioData() {
     state.holdingsRaw = Array.isArray(holdingsRaw) ? holdingsRaw : [];
 
     state.performance = await apiRequest(`/portfolio/${state.selectedPortfolioId}/performance`);
+    state.summary = await apiRequest(`/portfolios/${state.selectedPortfolioId}/summary`);
     const detailMap = new Map((state.performance?.holdingsDetail || []).map((item) => [item.holdingId, item]));
-    state.holdings = state.holdingsRaw.map((item) => normalizeHolding(item, detailMap));
+    const mappedHoldings = state.holdingsRaw.map((item) => normalizeHolding(item, detailMap));
+    state.holdings = mappedHoldings.filter((item) => item.type !== "Cash");
 
-    const holdingMap = new Map(state.holdings.map((item) => [item.id, item]));
+    const holdingMap = new Map(mappedHoldings.map((item) => [item.id, item]));
     const txResult = await apiRequest(`/portfolios/${state.selectedPortfolioId}/transactions`);
     const flattened = Array.isArray(txResult) ? txResult : [];
     state.transactions = flattened
         .map((item) => normalizeTransaction(item, holdingMap))
         .sort((a, b) => new Date(b.dateRaw).getTime() - new Date(a.dateRaw).getTime());
+
+    const snapshotsResult = await apiRequest(`/portfolios/${state.selectedPortfolioId}/snapshots`);
+    state.snapshots = Array.isArray(snapshotsResult) ? snapshotsResult : [];
 
     const primaryTicker = state.holdings.find((item) => item.ticker && item.type !== "Cash")?.ticker;
     if (primaryTicker) {
@@ -337,17 +324,22 @@ async function loadInitialData() {
 }
 
 function computeMetrics() {
-    const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
-    const totalCost = state.holdings.reduce((sum, item) => sum + item.quantity * item.avgPrice, 0);
-    const totalGain = Number(state.performance?.totalReturn ?? (totalValue - totalCost));
-    const totalGainPct = Number(state.performance?.returnRate ?? (totalCost > 0 ? (totalGain / totalCost) * 100 : 0));
-    const cashBalance = Number(state.performance?.cashBalance ?? 0);
+    const totalValue = Number(state.summary?.totalValue ?? state.performance?.totalMarketValue ?? state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
+    const totalGain = Number(state.summary?.totalGain ?? state.performance?.totalReturn ?? 0);
+    const totalGainPct = Number(state.summary?.totalGainPercentage ?? state.performance?.returnRate ?? 0);
+    const cashBalance = Number(state.summary?.cashBalance ?? state.performance?.cashBalance ?? 0);
+    const dayChangeReliable = Boolean(state.summary?.dayChangeReliable);
 
-    const selectedData = getPerformanceDataByRange(state.selectedRange);
-    const lastValue = selectedData[selectedData.length - 1]?.value || 0;
-    const prevValue = selectedData[selectedData.length - 2]?.value || lastValue;
-    const dayChangeAmount = lastValue - prevValue;
-    const dayChangePct = prevValue > 0 ? (dayChangeAmount / prevValue) * 100 : 0;
+    let dayChangeAmount = Number(state.summary?.dayChangeAmount ?? 0);
+    let dayChangePct = Number(state.summary?.dayChangePercentage ?? 0);
+
+    if (!dayChangeReliable) {
+        const selectedData = getPerformanceDataByRange(state.selectedRange);
+        const lastValue = selectedData[selectedData.length - 1]?.value || 0;
+        const prevValue = selectedData[selectedData.length - 2]?.value || lastValue;
+        dayChangeAmount = lastValue - prevValue;
+        dayChangePct = prevValue > 0 ? (dayChangeAmount / prevValue) * 100 : 0;
+    }
 
     return {
         totalValue,
@@ -355,7 +347,8 @@ function computeMetrics() {
         totalGainPct,
         dayChangeAmount,
         dayChangePct,
-        cashBalance
+        cashBalance,
+        dayChangeReliable
     };
 }
 
@@ -560,17 +553,37 @@ function renderSettingsPanel() {
 function renderTransactionManager() {
     const selectedHoldingId = state.tradeDraft?.holdingId;
     const selectedType = state.tradeDraft?.type || "BUY";
+    const selectedHolding = state.holdings.find((item) => item.id === selectedHoldingId);
+    const draftTicker = state.tradeDraft?.ticker || selectedHolding?.ticker || "";
+    const draftAssetType = state.tradeDraft?.assetType || selectedHolding?.type || "Stock";
+    const draftCurrency = state.tradeDraft?.currency || selectedHolding?.currency || "USD";
     const holdingOptions = state.holdings
+        .filter((holding) => holding.type !== "Cash")
         .map((holding) => `<option value="${holding.id}" ${selectedHoldingId === holding.id ? "selected" : ""}>${holding.ticker} (Holding #${holding.id})</option>`)
         .join("");
 
     return `
         <article class="card info-panel">
             <h2>Transaction Manager</h2>
-            <p>Create BUY/SELL transaction records for the selected portfolio. Transactions are immutable once created.</p>
+            <p>Create BUY/SELL transaction records for the selected portfolio. Cash deposit is available on Dashboard.</p>
             <form id="transaction-form" class="manager-grid" novalidate>
                 <label>Holding</label>
-                <select name="holdingId" required>${holdingOptions}</select>
+                <select name="holdingId">
+                    <option value="">Auto (BUY uses ticker/assetType)</option>
+                    ${holdingOptions}
+                </select>
+
+                <label>Ticker (for new BUY)</label>
+                <input name="ticker" type="text" maxlength="20" value="${toInputSafeText(draftTicker)}" placeholder="e.g. GOOGL">
+
+                <label>Asset Type</label>
+                <select name="assetType">
+                    <option value="STOCK" ${String(draftAssetType).toUpperCase() === "STOCK" ? "selected" : ""}>STOCK</option>
+                    <option value="BOND" ${String(draftAssetType).toUpperCase() === "BOND" ? "selected" : ""}>BOND</option>
+                </select>
+
+                <label>Currency</label>
+                <input name="currency" type="text" maxlength="3" value="${toInputSafeText(draftCurrency)}" placeholder="USD">
 
                 <label>Type</label>
                 <select name="type" required>
@@ -623,6 +636,27 @@ function renderTransactionManager() {
                     </tbody>
                 </table>
             </div>
+        </article>
+    `;
+}
+
+function renderCashDepositPanel() {
+    return `
+        <article class="card info-panel">
+            <h2>Cash Deposit</h2>
+            <p>Add funds directly from Dashboard. This updates cash and records a transaction.</p>
+            <form id="cash-deposit-form" class="manager-grid" novalidate>
+                <label>Deposit Amount</label>
+                <input name="amount" type="number" min="0.01" step="0.01" required>
+
+                <label>Deposit Time</label>
+                <input name="tradeDate" type="datetime-local" required>
+
+                <div class="manager-actions">
+                    <button type="submit" class="primary-btn">Deposit Cash</button>
+                </div>
+            </form>
+            <p class="form-error" id="cash-deposit-message">${toInputSafeText(state.transactionMessage)}</p>
         </article>
     `;
 }
@@ -723,7 +757,7 @@ function render() {
             id: "summary-day-change",
             label: "Day's Change",
             value: formatCurrency(metrics.dayChangeAmount),
-            detail: formatPercent(metrics.dayChangePct),
+            detail: metrics.dayChangeReliable ? formatPercent(metrics.dayChangePct) : "Awaiting yesterday snapshot",
             tone: metrics.dayChangeAmount >= 0 ? "positive" : "negative",
             icon: icons.check
         }),
@@ -738,7 +772,9 @@ function render() {
     ].join("");
 
     const charts = view.showPerformance ? `${PortfolioPerformanceChart(state.selectedRange)}${AssetAllocationChart(state.allocationData)}` : "";
-    const holdingsMarkup = view.holdingsMarkup || (view.showHoldings ? HoldingsTable(state.holdings, state.searchTerm, state.selectedType) : "");
+    const holdingsMarkup = view.holdingsMarkup || (view.showHoldings
+        ? `${state.activeNav === "Dashboard" ? renderCashDepositPanel() : ""}${HoldingsTable(state.holdings, state.searchTerm, state.selectedType)}`
+        : "");
     const transactionsMarkup = view.transactionsMarkup || (view.showTransactions ? RecentTransactions(state.transactions) : "");
     const portfolioOptions = state.portfolios
         .map(
@@ -1063,9 +1099,27 @@ function bindEvents() {
             event.preventDefault();
             const formData = new FormData(transactionForm);
             try {
+                const type = String(formData.get("type") || "BUY").toUpperCase();
+                const holdingIdRaw = String(formData.get("holdingId") || "").trim();
+                const holdingId = holdingIdRaw ? Number(holdingIdRaw) : null;
+                const ticker = String(formData.get("ticker") || "").trim().toUpperCase();
+                const assetType = String(formData.get("assetType") || "STOCK").trim().toUpperCase();
+                const currency = String(formData.get("currency") || "USD").trim().toUpperCase();
+
+                if (type === "SELL" && !holdingId) {
+                    throw new Error("SELL requires an existing holding.");
+                }
+
+                if (type === "BUY" && !holdingId && !ticker) {
+                    throw new Error("For a new BUY, provide ticker (or choose an existing holding).");
+                }
+
                 const payload = {
-                    holdingId: Number(formData.get("holdingId")),
-                    type: String(formData.get("type") || "BUY").toUpperCase(),
+                    holdingId,
+                    ticker,
+                    assetType,
+                    currency,
+                    type,
                     quantity: Number(formData.get("quantity")),
                     price: Number(formData.get("price")),
                     tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
@@ -1079,6 +1133,37 @@ function bindEvents() {
                 });
                 state.tradeDraft = null;
                 state.transactionMessage = "Transaction saved.";
+                await refreshPortfolioData();
+                render();
+            } catch (error) {
+                state.transactionMessage = error.message;
+                render();
+            }
+        });
+    }
+
+    const cashDepositForm = document.getElementById("cash-deposit-form");
+    if (cashDepositForm) {
+        cashDepositForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const formData = new FormData(cashDepositForm);
+            try {
+                const amount = Number(formData.get("amount"));
+                if (!(amount > 0)) {
+                    throw new Error("Deposit amount must be greater than 0.");
+                }
+
+                const payload = {
+                    amount,
+                    tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
+                };
+
+                await apiRequest(`/portfolios/${state.selectedPortfolioId}/cash/deposit`, {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                });
+
+                state.transactionMessage = "Cash deposited and recorded.";
                 await refreshPortfolioData();
                 render();
             } catch (error) {
@@ -1143,7 +1228,7 @@ function bindEvents() {
     if (addAssetBtn) {
         addAssetBtn.addEventListener("click", () => {
             state.activeNav = "Transactions";
-            state.transactionMessage = "Use BUY/SELL transactions to change positions and cash.";
+            state.transactionMessage = "Use BUY/SELL transactions. New BUY can auto-create holding by ticker.";
             render();
         });
     }
@@ -1175,7 +1260,15 @@ function bindEvents() {
 
     document.querySelectorAll("[data-buy-id]").forEach((button) => {
         button.addEventListener("click", () => {
-            state.tradeDraft = { holdingId: Number(button.dataset.buyId), type: "BUY" };
+            const holdingId = Number(button.dataset.buyId);
+            const holding = state.holdings.find((item) => Number(item.id) === holdingId);
+            state.tradeDraft = {
+                holdingId,
+                type: "BUY",
+                ticker: holding?.ticker,
+                assetType: holding?.type,
+                currency: holding?.currency
+            };
             state.activeNav = "Transactions";
             state.transactionMessage = "Create BUY transaction (Buy More).";
             render();
@@ -1184,7 +1277,15 @@ function bindEvents() {
 
     document.querySelectorAll("[data-sell-id]").forEach((button) => {
         button.addEventListener("click", () => {
-            state.tradeDraft = { holdingId: Number(button.dataset.sellId), type: "SELL" };
+            const holdingId = Number(button.dataset.sellId);
+            const holding = state.holdings.find((item) => Number(item.id) === holdingId);
+            state.tradeDraft = {
+                holdingId,
+                type: "SELL",
+                ticker: holding?.ticker,
+                assetType: holding?.type,
+                currency: holding?.currency
+            };
             state.activeNav = "Transactions";
             state.transactionMessage = "Create SELL transaction.";
             render();
@@ -1204,12 +1305,38 @@ function bindAddAssetModalEvents() {
     const cancelButton = document.getElementById("cancel-add-asset");
     const form = document.getElementById("add-asset-form");
     const error = document.getElementById("add-asset-error");
+    const fetchLatestButton = document.getElementById("fetch-latest-price");
+    const priceInput = document.getElementById("asset-price");
 
     cancelButton?.addEventListener("click", () => closeAddAssetModal());
 
     modal.addEventListener("click", (event) => {
         if (event.target.id === "add-asset-modal") {
             closeAddAssetModal();
+        }
+    });
+
+    fetchLatestButton?.addEventListener("click", async () => {
+        const ticker = String(fetchLatestButton.dataset.ticker || "").trim().toUpperCase();
+        if (!ticker) {
+            error.textContent = "Ticker is required to fetch latest quote.";
+            return;
+        }
+
+        error.textContent = "Fetching latest Yahoo quote...";
+        try {
+            const quote = await apiRequest(`/quotes/latest/${encodeURIComponent(ticker)}`);
+            const fetched = Number(quote?.price);
+            if (!(fetched > 0)) {
+                throw new Error("Yahoo did not return a valid quote.");
+            }
+            if (priceInput) {
+                priceInput.value = fetched.toFixed(4);
+            }
+            const source = String(quote?.source || "UNKNOWN");
+            error.textContent = `Latest price loaded (${source}): ${formatCurrency(fetched)}. Click Update Price to confirm.`;
+        } catch (fetchError) {
+            error.textContent = fetchError.message;
         }
     });
 
