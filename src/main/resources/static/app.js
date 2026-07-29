@@ -1233,6 +1233,63 @@ function bindEvents() {
         });
     }
 
+    const addPortfolioBtn = document.getElementById("add-portfolio-btn");
+    if (addPortfolioBtn) {
+        addPortfolioBtn.addEventListener("click", async () => {
+            const name = prompt("Enter portfolio name:");
+            if (!name) return;
+            const description = prompt("Enter description (optional):");
+            const initialCash = parseFloat(prompt("Enter initial cash amount:") || "0");
+            try {
+                await apiRequest("/saveportfolio", {
+                    method: "POST",
+                    body: JSON.stringify({ name, description: description || "", initialCash })
+                });
+                state.portfolios = await apiRequest("/portfolios");
+                state.selectedPortfolioId = state.portfolios[state.portfolios.length - 1]?.id || null;
+                state.loading = true;
+                render();
+                await refreshPortfolioData();
+                state.loading = false;
+                render();
+            } catch (error) {
+                state.globalError = error.message;
+                render();
+            }
+        });
+    }
+
+    const deletePortfolioBtn = document.getElementById("delete-portfolio-btn");
+    if (deletePortfolioBtn) {
+        deletePortfolioBtn.addEventListener("click", async () => {
+            if (!state.selectedPortfolioId) {
+                state.globalError = "No portfolio selected";
+                render();
+                return;
+            }
+            if (state.portfolios.length <= 1) {
+                state.globalError = "Cannot delete the last portfolio";
+                render();
+                return;
+            }
+            if (confirm("Are you sure you want to delete this portfolio?")) {
+                try {
+                    await apiRequest(`/delete/portfolio/${state.selectedPortfolioId}`, { method: "DELETE" });
+                    state.portfolios = state.portfolios.filter(p => p.id !== state.selectedPortfolioId);
+                    state.selectedPortfolioId = state.portfolios[0]?.id || null;
+                    state.loading = true;
+                    render();
+                    await refreshPortfolioData();
+                    state.loading = false;
+                    render();
+                } catch (error) {
+                    state.globalError = error.message;
+                    render();
+                }
+            }
+        });
+    }
+
     const searchInput = document.getElementById("holding-search");
     if (searchInput) {
         searchInput.addEventListener("input", (event) => {
