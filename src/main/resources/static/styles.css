@@ -790,6 +790,45 @@ th {
     padding: 12px;
 }
 
+.settings-stack {
+    display: grid;
+    gap: 10px;
+}
+
+.settings-stack label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.settings-stack input {
+    height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0 10px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+
+.settings-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.settings-status {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.settings-note {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
 .manager-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
