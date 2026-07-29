@@ -43,6 +43,6 @@ public class HoldingController {
 
     @DeleteMapping("/delete/holding/{id}")
     public String deleteHolding(@PathVariable int id) {
-        throw new IllegalArgumentException("Holding delete is disabled. Use /delete/transaction/{id} to rollback trades.");
+        throw new IllegalArgumentException("Holding delete is disabled. Quantity changes must come from BUY/SELL only.");
     }
 }
