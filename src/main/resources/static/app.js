@@ -324,16 +324,16 @@ async function loadInitialData() {
 }
 
 function computeMetrics() {
-    const totalValue = Number(state.summary?.totalValue ?? state.performance?.totalMarketValue ?? state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
-    const totalGain = Number(state.summary?.totalGain ?? state.performance?.totalReturn ?? 0);
-    const totalGainPct = Number(state.summary?.totalGainPercentage ?? state.performance?.returnRate ?? 0);
+    const totalValue = state.summary?.totalValue ?? state.performance?.totalMarketValue ?? null;
+    const totalGain = state.summary?.totalGain ?? state.performance?.totalReturn ?? null;
+    const totalGainPct = state.summary?.totalGainPercentage ?? state.performance?.returnRate ?? null;
     const cashBalance = Number(state.summary?.cashBalance ?? state.performance?.cashBalance ?? 0);
     const dayChangeReliable = Boolean(state.summary?.dayChangeReliable);
 
-    let dayChangeAmount = Number(state.summary?.dayChangeAmount ?? 0);
-    let dayChangePct = Number(state.summary?.dayChangePercentage ?? 0);
+    let dayChangeAmount = state.summary?.dayChangeAmount ?? null;
+    let dayChangePct = state.summary?.dayChangePercentage ?? null;
 
-    if (!dayChangeReliable) {
+    if (!dayChangeReliable && totalValue !== null) {
         const selectedData = getPerformanceDataByRange(state.selectedRange);
         const lastValue = selectedData[selectedData.length - 1]?.value || 0;
         const prevValue = selectedData[selectedData.length - 2]?.value || lastValue;
@@ -739,26 +739,26 @@ function render() {
         SummaryCard({
             id: "sparkline-total-value",
             label: "Total Value",
-            value: formatCurrency(metrics.totalValue),
-            detail: `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})`,
+            value: metrics.totalValue !== null ? formatCurrency(metrics.totalValue) : "—",
+            detail: metrics.totalValue !== null ? `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})` : "No holdings",
             tone: "positive",
             icon: icons.wallet,
-            sparkline: buildSparklineSvg()
+            sparkline: metrics.totalValue !== null ? buildSparklineSvg() : ""
         }),
         SummaryCard({
             id: "summary-gain",
             label: "Total Gain / Loss",
-            value: formatCurrency(metrics.totalGain),
-            detail: formatPercent(metrics.totalGainPct),
-            tone: metrics.totalGain >= 0 ? "positive" : "negative",
+            value: metrics.totalGain !== null ? formatCurrency(metrics.totalGain) : "—",
+            detail: metrics.totalGainPct !== null ? formatPercent(metrics.totalGainPct) : "—",
+            tone: metrics.totalGain !== null && metrics.totalGain >= 0 ? "positive" : "negative",
             icon: icons.trend
         }),
         SummaryCard({
             id: "summary-day-change",
             label: "Day's Change",
-            value: formatCurrency(metrics.dayChangeAmount),
-            detail: metrics.dayChangeReliable ? formatPercent(metrics.dayChangePct) : "Awaiting yesterday snapshot",
-            tone: metrics.dayChangeAmount >= 0 ? "positive" : "negative",
+            value: metrics.dayChangeAmount !== null ? formatCurrency(metrics.dayChangeAmount) : "—",
+            detail: metrics.dayChangeAmount !== null ? (metrics.dayChangeReliable ? formatPercent(metrics.dayChangePct) : "Awaiting yesterday snapshot") : "—",
+            tone: metrics.dayChangeAmount !== null && metrics.dayChangeAmount >= 0 ? "positive" : "negative",
             icon: icons.check
         }),
         SummaryCard({
@@ -789,8 +789,8 @@ function render() {
     appRoot.innerHTML = AppLayout({
         topNavbar: TopNavbar(),
         sidebar: Sidebar({
-            totalValue: formatCurrency(metrics.totalValue),
-            dayChange: `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})`,
+            totalValue: metrics.totalValue !== null ? formatCurrency(metrics.totalValue) : "—",
+            dayChange: metrics.dayChangeAmount !== null ? `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})` : "—",
             activeNav: state.activeNav
         }),
         header: DashboardHeader({
@@ -1239,11 +1239,10 @@ function bindEvents() {
             const name = prompt("Enter portfolio name:");
             if (!name) return;
             const description = prompt("Enter description (optional):");
-            const initialCash = parseFloat(prompt("Enter initial cash amount:") || "0");
             try {
                 await apiRequest("/saveportfolio", {
                     method: "POST",
-                    body: JSON.stringify({ name, description: description || "", initialCash })
+                    body: JSON.stringify({ name, description: description || "", initialCash: 0 })
                 });
                 state.portfolios = await apiRequest("/portfolios");
                 state.selectedPortfolioId = state.portfolios[state.portfolios.length - 1]?.id || null;
