@@ -41,8 +41,7 @@ public class HoldingService {
             throw new IllegalArgumentException("Holding not found: " + holdingId);
         }
 
-        // In the current schema, purchase_price is used as the stored manual price.
-        holding.setPurchasePrice(currentPrice.setScale(4, RoundingMode.HALF_UP));
+        holding.setCurrentPrice(currentPrice.setScale(4, RoundingMode.HALF_UP));
         return holdingRepository.update(holding);
     }
 }

@@ -170,11 +170,11 @@ public class TransactionService {
 
         if (quantity.compareTo(ZERO) <= 0) {
             holding.setQuantity(ZERO);
-            holding.setPurchasePrice(ZERO);
+            holding.setAveragePrice(ZERO);
         } else {
             BigDecimal avgPrice = totalCost.divide(quantity, 4, RoundingMode.HALF_UP);
             holding.setQuantity(quantity.setScale(4, RoundingMode.HALF_UP));
-            holding.setPurchasePrice(avgPrice);
+            holding.setAveragePrice(avgPrice);
         }
 
         holdingRepository.update(holding);

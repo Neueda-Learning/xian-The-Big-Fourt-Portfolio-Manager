@@ -18,8 +18,8 @@ import java.util.Objects;
 public class PerformanceService {
 
     /**
-     * Eren issue: gain/loss could remain zero when live quotes failed, because valuation fell back too quickly to purchase cost.
-     * Fix: resolve current price with this order: local latest close -> Yahoo quote -> purchase price.
+     * Eren issue: holding had no explicit currentPrice column, which mixed average cost and market price semantics.
+     * Fix: use averagePrice for cost basis and currentPrice (manual/local quote/Yahoo) for valuation.
      * Reviewer: GitHub Copilot (GPT-5.3-Codex).
      */
 
@@ -54,19 +54,19 @@ public class PerformanceService {
             }
 
             BigDecimal currentPrice = resolveCurrentPrice(h);
-            if (currentPrice == null) currentPrice = h.getPurchasePrice();
+            if (currentPrice == null) currentPrice = h.getAveragePrice();
             if (currentPrice == null) currentPrice = BigDecimal.ZERO;
 
             BigDecimal marketValue = h.getQuantity().multiply(currentPrice);
             BigDecimal cost = h.getQuantity().multiply(
-                h.getPurchasePrice() != null ? h.getPurchasePrice() : BigDecimal.ZERO
+                h.getAveragePrice() != null ? h.getAveragePrice() : BigDecimal.ZERO
             );
             holdingsMarketValue = holdingsMarketValue.add(marketValue);
             totalCost = totalCost.add(cost);
 
             details.add(new HoldingDetail(
                 h.getId(), h.getTicker(), h.getAssetType().name(),
-                h.getQuantity(), h.getPurchasePrice(), currentPrice,
+                h.getQuantity(), h.getAveragePrice(), currentPrice,
                 marketValue, cost
             ));
         }
@@ -92,6 +92,10 @@ public class PerformanceService {
         String ticker = holding.getTicker();
         if (ticker == null || ticker.isBlank()) {
             return null;
+        }
+
+        if (holding.getCurrentPrice() != null) {
+            return holding.getCurrentPrice();
         }
 
         priceHistory latest = priceHistoryRepository.getLatestPriceByTicker(ticker.toUpperCase());
@@ -157,7 +161,7 @@ public class PerformanceService {
         private String ticker;
         private String assetType;
         private BigDecimal quantity;
-        private BigDecimal purchasePrice;
+        private BigDecimal averagePrice;
         private BigDecimal currentPrice;
         private BigDecimal marketValue;
         private BigDecimal cost;
@@ -165,13 +169,13 @@ public class PerformanceService {
         public HoldingDetail() {}
 
         public HoldingDetail(int holdingId, String ticker, String assetType,
-                             BigDecimal quantity, BigDecimal purchasePrice, BigDecimal currentPrice,
+                             BigDecimal quantity, BigDecimal averagePrice, BigDecimal currentPrice,
                              BigDecimal marketValue, BigDecimal cost) {
             this.holdingId = holdingId;
             this.ticker = ticker;
             this.assetType = assetType;
             this.quantity = quantity;
-            this.purchasePrice = purchasePrice;
+            this.averagePrice = averagePrice;
             this.currentPrice = currentPrice;
             this.marketValue = marketValue;
             this.cost = cost;
@@ -185,8 +189,8 @@ public class PerformanceService {
         public void setAssetType(String assetType) { this.assetType = assetType; }
         public BigDecimal getQuantity() { return quantity; }
         public void setQuantity(BigDecimal quantity) { this.quantity = quantity; }
-        public BigDecimal getPurchasePrice() { return purchasePrice; }
-        public void setPurchasePrice(BigDecimal purchasePrice) { this.purchasePrice = purchasePrice; }
+        public BigDecimal getAveragePrice() { return averagePrice; }
+        public void setAveragePrice(BigDecimal averagePrice) { this.averagePrice = averagePrice; }
         public BigDecimal getCurrentPrice() { return currentPrice; }
         public void setCurrentPrice(BigDecimal currentPrice) { this.currentPrice = currentPrice; }
         public BigDecimal getMarketValue() { return marketValue; }

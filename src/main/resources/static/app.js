@@ -86,8 +86,8 @@ function normalizeHolding(rawHolding, detailMap) {
         name: ticker,
         type,
         quantity: Number(rawHolding.quantity || 0),
-        avgPrice: Number(rawHolding.purchasePrice || 0),
-        currentPrice: Number(detail?.currentPrice || rawHolding.purchasePrice || 0),
+        avgPrice: Number(rawHolding.averagePrice || 0),
+        currentPrice: Number(detail?.currentPrice || rawHolding.currentPrice || 0),
         currency: rawHolding.currency || "USD",
         purchasedata: rawHolding.purchasedata
     };
