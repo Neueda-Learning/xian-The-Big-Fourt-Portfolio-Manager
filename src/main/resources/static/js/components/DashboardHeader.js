@@ -10,7 +10,8 @@ export function DashboardHeader({
     title = "Dashboard",
     subtitle = "Overview of your portfolio performance and holdings",
     showAddAsset = true,
-    extraControls = ""
+    extraControls = "",
+    showPortfolioButtons = false
 } = {}) {
     return `
         <section class="dashboard-header">
@@ -20,14 +21,18 @@ export function DashboardHeader({
             </div>
             <div class="header-controls">
                 ${extraControls}
-                <button class="secondary-btn" id="add-portfolio-btn" type="button">
+                ${
+                    showPortfolioButtons
+                        ? `<button class="secondary-btn" id="add-portfolio-btn" type="button">
                     <span class="btn-icon">${icons.plus}</span>
                     Add Portfolio
                 </button>
                 <button class="secondary-btn" id="delete-portfolio-btn" type="button">
                     <span class="btn-icon">${icons.trash}</span>
                     Delete
-                </button>
+                </button>`
+                        : ""
+                }
                 ${
                     showAddAsset
                         ? `<button class="primary-btn" id="add-asset-btn" type="button">

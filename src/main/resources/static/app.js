@@ -504,7 +504,6 @@ function renderReportsPanel(metrics) {
     const totalAssets = allHoldings.length;
     const stockCount = allHoldings.filter((item) => String(item.assetType || "").toUpperCase() === "STOCK").length;
     const bondCount = allHoldings.filter((item) => String(item.assetType || "").toUpperCase() === "BOND").length;
-    const cashCount = allHoldings.filter((item) => String(item.assetType || "").toUpperCase() === "CASH").length;
 
     return `
         <article class="card info-panel">
@@ -517,7 +516,6 @@ function renderReportsPanel(metrics) {
                 <div><strong>${state.transactions.length}</strong><span>Total Transactions</span></div>
                 <div><strong>${stockCount}</strong><span>Stock Positions</span></div>
                 <div><strong>${bondCount}</strong><span>Bond Positions</span></div>
-                <div><strong>${cashCount}</strong><span>Cash Positions</span></div>
             </div>
         </article>
     `;
@@ -768,6 +766,7 @@ function render() {
                 `<option value="${item.id}" ${item.id === state.selectedPortfolioId ? "selected" : ""}>${toInputSafeText(item.name || `Portfolio ${item.id}`)}</option>`
         )
         .join("");
+    const extraControls = state.activeNav === "Dashboard" ? `<label class="header-select-wrap">Portfolio<select id="portfolio-switch" class="header-select">${portfolioOptions}</select></label>` : "";
     const globalErrorMarkup = state.globalError
         ? `<article class="card info-panel"><h2>System Message</h2><p class="form-error">${toInputSafeText(state.globalError)}</p></article>`
         : "";
@@ -783,7 +782,8 @@ function render() {
             title: view.title,
             subtitle: view.subtitle,
             showAddAsset: view.showAddAsset,
-            extraControls: `<label class="header-select-wrap">Portfolio<select id="portfolio-switch" class="header-select">${portfolioOptions}</select></label>`
+            extraControls: extraControls,
+            showPortfolioButtons: state.activeNav === "Dashboard"
         }),
         summaryCards: summarySectionMarkup,
         charts,

@@ -11,11 +11,6 @@ export function TopNavbar() {
             <div class="top-actions">
                 <button class="icon-btn" id="theme-toggle-btn" aria-label="Toggle theme">${icons.sun}</button>
                 <button class="icon-btn" id="notify-btn" aria-label="View notifications">${icons.bell}</button>
-                <button class="profile-btn" aria-label="Open user menu">
-                    <span class="avatar">PM</span>
-                    <span class="profile-name">Portfolio Manager</span>
-                    <span class="chevron">${icons.chevronDown}</span>
-                </button>
             </div>
         </header>
     `;
