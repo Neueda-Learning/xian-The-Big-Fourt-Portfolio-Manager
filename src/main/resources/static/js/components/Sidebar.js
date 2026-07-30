@@ -11,7 +11,6 @@ const navItems = [
 
 export function Sidebar(metrics) {
     const activeNav = metrics.activeNav || "Dashboard";
-    const dayChangeTone = metrics.dayChangeTone === "negative" ? "negative" : "positive";
 
     return `
         <aside class="sidebar" id="sidebar">
@@ -31,8 +30,6 @@ export function Sidebar(metrics) {
             <div class="portfolio-summary-card">
                 <p class="summary-label">Total Portfolio Value</p>
                 <p class="summary-value">${metrics.totalValue}</p>
-                <p class="summary-change ${dayChangeTone}">${metrics.dayChange}</p>
-                <p class="summary-sub">Today\'s Change</p>
             </div>
 
             <p class="sidebar-footer">&copy; 2024 Portfolio Manager</p>
