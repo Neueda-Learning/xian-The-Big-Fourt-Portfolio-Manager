@@ -401,27 +401,12 @@ function computeMetrics() {
     const totalGain = state.summary?.totalGain ?? state.performance?.totalReturn ?? null;
     const totalGainPct = state.summary?.totalGainPercentage ?? state.performance?.returnRate ?? null;
     const cashBalance = Number(state.summary?.cashBalance ?? state.performance?.cashBalance ?? 0);
-    const dayChangeReliable = Boolean(state.summary?.dayChangeReliable);
-
-    let dayChangeAmount = state.summary?.dayChangeAmount ?? null;
-    let dayChangePct = state.summary?.dayChangePercentage ?? null;
-
-    if (!dayChangeReliable && totalValue !== null) {
-        const selectedData = getPerformanceDataByRange(state.selectedRange);
-        const lastValue = selectedData[selectedData.length - 1]?.value || 0;
-        const prevValue = selectedData[selectedData.length - 2]?.value || lastValue;
-        dayChangeAmount = lastValue - prevValue;
-        dayChangePct = prevValue > 0 ? (dayChangeAmount / prevValue) * 100 : 0;
-    }
 
     return {
         totalValue,
         totalGain,
         totalGainPct,
-        dayChangeAmount,
-        dayChangePct,
-        cashBalance,
-        dayChangeReliable
+        cashBalance
     };
 }
 
@@ -846,7 +831,7 @@ function render() {
             id: "sparkline-total-value",
             label: "Total Value",
             value: metrics.totalValue !== null ? formatCurrency(metrics.totalValue) : "—",
-            detail: metrics.totalValue !== null ? `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})` : "No holdings",
+            detail: metrics.totalValue !== null ? "Current portfolio value" : "No holdings",
             tone: "positive",
             icon: icons.wallet,
             sparkline: metrics.totalValue !== null ? buildSparklineSvg() : ""
@@ -858,14 +843,6 @@ function render() {
             detail: metrics.totalGainPct !== null ? formatPercent(metrics.totalGainPct) : "—",
             tone: metrics.totalGain !== null && metrics.totalGain >= 0 ? "positive" : "negative",
             icon: icons.trend
-        }),
-        SummaryCard({
-            id: "summary-day-change",
-            label: "Day's Change",
-            value: metrics.dayChangeAmount !== null ? formatCurrency(metrics.dayChangeAmount) : "—",
-            detail: metrics.dayChangeAmount !== null ? (metrics.dayChangeReliable ? formatPercent(metrics.dayChangePct) : "Awaiting yesterday snapshot") : "—",
-            tone: metrics.dayChangeAmount !== null && metrics.dayChangeAmount >= 0 ? "positive" : "negative",
-            icon: icons.check
         }),
         SummaryCard({
             id: "summary-cash-balance",
@@ -897,8 +874,6 @@ function render() {
         topNavbar: TopNavbar(),
         sidebar: Sidebar({
             totalValue: metrics.totalValue !== null ? formatCurrency(metrics.totalValue) : "—",
-            dayChange: metrics.dayChangeAmount !== null ? `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})` : "—",
-            dayChangeTone: metrics.dayChangeAmount !== null && metrics.dayChangeAmount < 0 ? "negative" : "positive",
             activeNav: state.activeNav
         }),
         header: DashboardHeader({
