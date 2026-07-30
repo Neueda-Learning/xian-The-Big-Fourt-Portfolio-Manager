@@ -23,7 +23,7 @@ public class PortfolioSnapshotService {
     @Transactional
     public void captureToday(int portfolioId) {
         PerformanceService.PerformanceResult perf = performanceService.getPerformance(portfolioId);
-        if (perf == null || perf.getTotalMarketValue() == null || perf.getCashBalance() == null || perf.getHoldingsMarketValue() == null) {
+        if (perf == null || perf.getTotalMarketValue() == null || perf.getCashBalance() == null || perf.getTotalReturn() == null) {
             return;
         }
 
@@ -32,7 +32,7 @@ public class PortfolioSnapshotService {
                 LocalDate.now(),
                 perf.getTotalMarketValue(),
                 perf.getCashBalance(),
-                perf.getHoldingsMarketValue()
+                perf.getTotalReturn()
         );
     }
 
