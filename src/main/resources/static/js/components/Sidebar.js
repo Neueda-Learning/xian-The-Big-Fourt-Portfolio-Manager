@@ -32,7 +32,7 @@ export function Sidebar(metrics) {
                 <p class="summary-value">${metrics.totalValue}</p>
             </div>
 
-            <p class="sidebar-footer">&copy; 2024 Portfolio Manager</p>
+            <p class="sidebar-footer">&copy; 2026 Portfolio Manager</p>
         </aside>
     `;
 }
