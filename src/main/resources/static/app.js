@@ -52,6 +52,7 @@ const state = {
     aiAssistantSelectedModel: "",
     aiAssistantPrompt: "",
     aiAssistantResponse: "",
+    aiAssistantHistory: [],
     aiAssistantError: ""
 };
 
@@ -462,7 +463,7 @@ function getViewConfig(metrics) {
                 models: state.aiAssistantModels,
                 selectedModel: state.aiAssistantSelectedModel,
                 draftMessage: state.aiAssistantPrompt,
-                responseText: state.aiAssistantResponse,
+                history: state.aiAssistantHistory,
                 errorMessage: state.aiAssistantError,
                 apiKeyStatus: getAiAssistantStatusMessage()
             })
@@ -1023,7 +1024,14 @@ function bindEvents() {
                 });
                 state.aiAssistantProvider = String(response?.provider || state.aiAssistantProvider || "").trim().toLowerCase();
                 state.aiAssistantSelectedModel = String(response?.model || selectedModel).trim();
-                state.aiAssistantResponse = String(response?.answer || "").trim();
+                const assistantAnswer = String(response?.answer || "").trim() || "No response received.";
+                state.aiAssistantResponse = assistantAnswer;
+                state.aiAssistantHistory = [
+                    ...state.aiAssistantHistory,
+                    { role: "user", content: trimmedPrompt },
+                    { role: "assistant", content: assistantAnswer }
+                ];
+                state.aiAssistantPrompt = "";
             } catch (error) {
                 state.aiAssistantError = error.message;
             } finally {
@@ -1325,6 +1333,13 @@ function bindEvents() {
 
     bindAddAssetModalEvents();
     bindModalKeyboardEscape();
+
+    if (state.activeNav === "AI Assistant") {
+        const transcript = document.querySelector(".chat-transcript");
+        if (transcript) {
+            transcript.scrollTop = transcript.scrollHeight;
+        }
+    }
 }
 
 function bindAddAssetModalEvents() {

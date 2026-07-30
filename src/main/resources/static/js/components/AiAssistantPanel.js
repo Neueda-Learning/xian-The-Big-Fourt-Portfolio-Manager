@@ -7,12 +7,13 @@ export function AiAssistantPanel({
     models = [],
     selectedModel = "",
     draftMessage = "",
-    responseText = "",
+    history = [],
     errorMessage = "",
     apiKeyStatus = ""
 } = {}) {
     const safeModels = Array.isArray(models) ? models : [];
     const selected = safeModels.includes(selectedModel) ? selectedModel : (safeModels[0] || "");
+    const safeHistory = Array.isArray(history) ? history : [];
 
     const modelOptions = safeModels
         .map((model) => `<option value="${toInputSafeText(model)}" ${model === selected ? "selected" : ""}>${toInputSafeText(model)}</option>`)
@@ -22,14 +23,30 @@ export function AiAssistantPanel({
         ? "Loading assistant configuration..."
         : (apiKeyStatus || "Assistant is ready.");
 
-    const responseMarkup = responseText
-        ? `<article class="card info-panel"><h2>Assistant Response</h2><p>${toInputSafeText(responseText)}</p></article>`
-        : "";
+    const historyMarkup = safeHistory.length
+        ? safeHistory.map((entry) => {
+            const role = String(entry?.role || "").toLowerCase();
+            const label = role === "user" ? "You" : "Assistant";
+            const bubbleClass = role === "user" ? "chat-bubble user" : "chat-bubble assistant";
+            return `
+                <div class="${bubbleClass}">
+                    <div class="chat-bubble-meta">${label}</div>
+                    <div class="chat-bubble-text">${toInputSafeText(entry?.content || "")}</div>
+                </div>
+            `;
+        }).join("")
+        : `<p class="chat-empty-state">Conversation history will appear here after your first message.</p>`;
 
     return `
         <article class="card info-panel">
             <h2>Ask AI Assistant</h2>
             <p>${toInputSafeText(statusLine)}</p>
+            <div class="chat-window" aria-live="polite" aria-label="Conversation history">
+                <div class="chat-window-header">Conversation History</div>
+                <div class="chat-transcript">
+                    ${historyMarkup}
+                </div>
+            </div>
             <form id="ai-assistant-form" class="manager-grid" novalidate>
                 <label for="ai-model-select">Model</label>
                 <select id="ai-model-select" ${loading || busy ? "disabled" : ""}>
@@ -47,7 +64,6 @@ export function AiAssistantPanel({
             <p class="settings-note">Provider: ${toInputSafeText(provider || "unknown")}</p>
             <p class="form-error" id="ai-assistant-error">${toInputSafeText(errorMessage)}</p>
         </article>
-        ${responseMarkup}
     `;
 }
 
