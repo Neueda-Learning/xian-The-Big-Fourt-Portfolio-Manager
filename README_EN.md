@@ -70,9 +70,7 @@ This system addresses all of the above through a structured relational data mode
 
 - Integrates Zhipu AI (GLM series models) to provide educational financial knowledge Q&A.
 - Frontend model selection is supported (`glm-4.7-flash`, `glm-4.7`, `glm-5.2`); the available model list is governed by backend configuration.
-- Users can supply a personal API Key within the current session; it takes priority over the system-level key.
 - **The AI is strictly limited to knowledge Q&A and cannot execute any trades, holding changes, or database mutations** — enforced by a built-in system prompt constraint.
-- API Keys are stored exclusively in the server-side `HttpSession`; they are never persisted to the database, written to configuration files, or returned as plaintext to the frontend.
 
 ---
 
@@ -181,11 +179,11 @@ The database engine is **MySQL**. Table definitions are located in `src/main/res
 **Prerequisites**: MySQL must be installed and running locally. The database `portfolio_db` is created automatically via `createDatabaseIfNotExist=true` in the connection URL.
 
 ```powershell
-# Build and run (default port 9009)
+# Build and run (default port 9005)
 .\mvnw.cmd spring-boot:run
 ```
 
-Open in browser: [http://localhost:9009](http://localhost:9009)
+Open in browser: [http://localhost:9005](http://localhost:9005)
 
 **Configure AI features** (optional): Add the following to the Environment Variables in your IntelliJ IDEA Run Configuration:
 
