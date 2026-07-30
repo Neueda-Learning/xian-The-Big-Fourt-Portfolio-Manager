@@ -852,6 +852,17 @@ th {
     color: var(--text-primary);
 }
 
+.manager-grid textarea {
+    grid-column: 1 / -1;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font: inherit;
+    resize: vertical;
+}
+
 .manager-actions {
     grid-column: 1 / -1;
     display: flex;

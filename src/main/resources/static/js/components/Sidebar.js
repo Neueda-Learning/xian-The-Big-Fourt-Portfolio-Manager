@@ -4,13 +4,14 @@ const navItems = [
     { key: "Dashboard", icon: icons.home },
     { key: "Holdings", icon: icons.holdings },
     { key: "Transactions", icon: icons.transactions },
-    { key: "Performance", icon: icons.performance },
+    { key: "AI Assistant", icon: icons.info },
     { key: "Reports", icon: icons.reports },
     { key: "Settings", icon: icons.settings }
 ];
 
 export function Sidebar(metrics) {
     const activeNav = metrics.activeNav || "Dashboard";
+    const dayChangeTone = metrics.dayChangeTone === "negative" ? "negative" : "positive";
 
     return `
         <aside class="sidebar" id="sidebar">
@@ -30,7 +31,7 @@ export function Sidebar(metrics) {
             <div class="portfolio-summary-card">
                 <p class="summary-label">Total Portfolio Value</p>
                 <p class="summary-value">${metrics.totalValue}</p>
-                <p class="summary-change positive">${metrics.dayChange}</p>
+                <p class="summary-change ${dayChangeTone}">${metrics.dayChange}</p>
                 <p class="summary-sub">Today\'s Change</p>
             </div>
 

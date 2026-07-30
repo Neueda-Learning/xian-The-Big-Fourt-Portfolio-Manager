@@ -1,4 +1,4 @@
-import { formatCurrency, formatSignedCurrency } from "../utils/formatters.js";
+import { formatCurrency, formatSignedCurrency, toInputSafeText } from "../utils/formatters.js";
 
 function transactionBadge(action) {
     return `badge ${action.toLowerCase()}`;
@@ -30,10 +30,10 @@ export function RecentTransactions(transactions) {
                             .map(
                                 (transaction) => `
                             <tr>
-                                <td>${transaction.date}</td>
-                                <td><span class="badge ${transaction.type.toLowerCase()}">${transaction.type}</span></td>
-                                <td>${transaction.asset}</td>
-                                <td><span class="${transactionBadge(transaction.action)}">${transaction.action}</span></td>
+                                <td>${toInputSafeText(transaction.date)}</td>
+                                <td><span class="badge ${transaction.type.toLowerCase()}">${toInputSafeText(transaction.type)}</span></td>
+                                <td>${toInputSafeText(transaction.asset)}</td>
+                                <td><span class="${transactionBadge(transaction.action)}">${toInputSafeText(transaction.action)}</span></td>
                                 <td>${transaction.quantity}</td>
                                 <td>${formatCurrency(transaction.price)}</td>
                                 <td class="${transaction.amount >= 0 ? "positive" : "negative"}">${formatSignedCurrency(transaction.amount)}</td>

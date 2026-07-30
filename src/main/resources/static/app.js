@@ -8,10 +8,14 @@ import { AssetAllocationChart } from "./js/components/AssetAllocationChart.js";
 import { HoldingsTable } from "./js/components/HoldingsTable.js";
 import { RecentTransactions } from "./js/components/RecentTransactions.js";
 import { AddAssetModal } from "./js/components/AddAssetModal.js";
+import { AiAssistantPanel } from "./js/components/AiAssistantPanel.js";
 import { icons } from "./js/components/icons.js";
 import { compactDate, formatCurrency, formatPercent, formatSignedCurrency, toInputSafeText } from "./js/utils/formatters.js";
 
 const appRoot = document.getElementById("app");
+if (!appRoot) {
+    throw new Error("App root element '#app' was not found.");
+}
 const savedTheme = window.localStorage.getItem("pm-theme");
 
 const state = {
@@ -47,7 +51,16 @@ const state = {
     },
     aiApiKeyStatusLoaded: false,
     aiApiKeyBusy: false,
-    aiApiKeyFeedback: ""
+    aiApiKeyFeedback: "",
+    aiAssistantLoading: false,
+    aiAssistantBusy: false,
+    aiAssistantModelsLoaded: false,
+    aiAssistantModels: [],
+    aiAssistantProvider: "",
+    aiAssistantSelectedModel: "",
+    aiAssistantPrompt: "",
+    aiAssistantResponse: "",
+    aiAssistantError: ""
 };
 
 let performanceChart;
@@ -144,6 +157,66 @@ async function loadAiApiKeyStatus() {
     } finally {
         state.aiApiKeyBusy = false;
         syncAiApiSettingsUi();
+    }
+}
+
+function normalizeAiModelOptions(payload) {
+    const models = Array.isArray(payload?.models)
+        ? payload.models
+            .map((model) => String(model || "").trim())
+            .filter(Boolean)
+        : [];
+    const defaultModel = String(payload?.defaultModel || "").trim();
+    const selectedDefault = models.includes(defaultModel) ? defaultModel : (models[0] || "");
+    return {
+        provider: String(payload?.provider || "").trim().toLowerCase(),
+        models,
+        defaultModel: selectedDefault
+    };
+}
+
+async function fetchAiModelOptions() {
+    const response = await apiRequest("/api/ai/models");
+    const normalized = normalizeAiModelOptions(response);
+    state.aiAssistantProvider = normalized.provider;
+    state.aiAssistantModels = normalized.models;
+    state.aiAssistantModelsLoaded = true;
+    if (!state.aiAssistantSelectedModel || !normalized.models.includes(state.aiAssistantSelectedModel)) {
+        state.aiAssistantSelectedModel = normalized.defaultModel;
+    }
+}
+
+function getAiAssistantStatusMessage() {
+    if (state.aiApiKeyStatusLoaded) {
+        return `${getAiApiKeyStatusMessage()}. Manage API keys in Settings.`;
+    }
+    return "Manage API keys in Settings if the assistant cannot answer.";
+}
+
+async function loadAiAssistantData() {
+    state.aiAssistantError = "";
+    if (state.aiAssistantLoading) {
+        return;
+    }
+
+    try {
+        if (!state.aiAssistantModelsLoaded) {
+            state.aiAssistantLoading = true;
+            render();
+            await fetchAiModelOptions();
+        }
+        if (!state.aiApiKeyStatusLoaded) {
+            try {
+                await fetchAiApiKeyStatus();
+            } catch (error) {
+                // Keep the chat available even if the status hint cannot be loaded.
+            }
+        }
+    } catch (error) {
+        state.aiAssistantError = error.message;
+    } finally {
+        state.aiAssistantLoading = false;
+        render();
     }
 }
 
@@ -462,11 +535,35 @@ function getViewConfig(metrics) {
         return {
             ...defaults,
             title: "Performance",
-            subtitle: "Analyze portfolio growth and allocation trends",
+            subtitle: "Track portfolio value over time and allocation by asset class",
             showAddAsset: false,
+            showSummary: false,
+            showHoldings: false,
+            showTransactions: false
+        };
+    }
+
+    if (state.activeNav === "AI Assistant") {
+        return {
+            ...defaults,
+            title: "AI Assistant",
+            subtitle: "Ask the backend assistant questions about portfolio and market knowledge",
+            showAddAsset: false,
+            showSummary: false,
+            showPerformance: false,
             showHoldings: false,
             showTransactions: false,
-            transactionsMarkup: renderPriceHistoryManager()
+            holdingsMarkup: AiAssistantPanel({
+                loading: state.aiAssistantLoading,
+                busy: state.aiAssistantBusy,
+                provider: state.aiAssistantProvider,
+                models: state.aiAssistantModels,
+                selectedModel: state.aiAssistantSelectedModel,
+                draftMessage: state.aiAssistantPrompt,
+                responseText: state.aiAssistantResponse,
+                errorMessage: state.aiAssistantError,
+                apiKeyStatus: getAiAssistantStatusMessage()
+            })
         };
     }
 
@@ -500,10 +597,11 @@ function getViewConfig(metrics) {
 }
 
 function renderReportsPanel(metrics) {
-    const totalAssets = state.holdings.length;
-    const stockCount = state.holdings.filter((item) => item.type === "Stock").length;
-    const bondCount = state.holdings.filter((item) => item.type === "Bond").length;
-    const cashCount = state.holdings.filter((item) => item.type === "Cash").length;
+    const allHoldings = Array.isArray(state.holdingsRaw) ? state.holdingsRaw : [];
+    const totalAssets = allHoldings.length;
+    const stockCount = allHoldings.filter((item) => String(item.assetType || "").toUpperCase() === "STOCK").length;
+    const bondCount = allHoldings.filter((item) => String(item.assetType || "").toUpperCase() === "BOND").length;
+    const cashCount = allHoldings.filter((item) => String(item.assetType || "").toUpperCase() === "CASH").length;
 
     return `
         <article class="card info-panel">
@@ -548,6 +646,14 @@ function renderSettingsPanel() {
             </div>
         </article>
     `;
+}
+
+function toIsoDateTimeSeconds(rawValue, fieldName) {
+    const parsed = new Date(String(rawValue || "").trim());
+    if (Number.isNaN(parsed.getTime())) {
+        throw new Error(`${fieldName} is invalid.`);
+    }
+    return parsed.toISOString().slice(0, 19);
 }
 
 function renderTransactionManager() {
@@ -785,12 +891,14 @@ function render() {
     const globalErrorMarkup = state.globalError
         ? `<article class="card info-panel"><h2>System Message</h2><p class="form-error">${toInputSafeText(state.globalError)}</p></article>`
         : "";
+    const summarySectionMarkup = `${globalErrorMarkup}${view.showSummary ? summaryCards : ""}`;
 
     appRoot.innerHTML = AppLayout({
         topNavbar: TopNavbar(),
         sidebar: Sidebar({
             totalValue: metrics.totalValue !== null ? formatCurrency(metrics.totalValue) : "—",
             dayChange: metrics.dayChangeAmount !== null ? `${formatSignedCurrency(metrics.dayChangeAmount)} (${formatPercent(metrics.dayChangePct)})` : "—",
+            dayChangeTone: metrics.dayChangeAmount !== null && metrics.dayChangeAmount < 0 ? "negative" : "positive",
             activeNav: state.activeNav
         }),
         header: DashboardHeader({
@@ -799,7 +907,7 @@ function render() {
             showAddAsset: view.showAddAsset,
             extraControls: `<label class="header-select-wrap">Portfolio<select id="portfolio-switch" class="header-select">${portfolioOptions}</select></label>`
         }),
-        summaryCards: view.showSummary ? summaryCards : globalErrorMarkup,
+        summaryCards: summarySectionMarkup,
         charts,
         holdingsTable: holdingsMarkup,
         recentTransactions: transactionsMarkup,
@@ -979,6 +1087,75 @@ function bindEvents() {
         });
     }
 
+    const aiModelSelect = document.getElementById("ai-model-select");
+    if (aiModelSelect) {
+        aiModelSelect.addEventListener("change", (event) => {
+            state.aiAssistantSelectedModel = String(event.target.value || "").trim();
+        });
+    }
+
+    const aiChatInput = document.getElementById("ai-chat-input");
+    if (aiChatInput) {
+        aiChatInput.addEventListener("input", (event) => {
+            state.aiAssistantPrompt = event.target.value;
+        });
+    }
+
+    const aiAssistantForm = document.getElementById("ai-assistant-form");
+    if (aiAssistantForm) {
+        aiAssistantForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            if (state.aiAssistantBusy) {
+                return;
+            }
+
+            const selectedModel = String(document.getElementById("ai-model-select")?.value || state.aiAssistantSelectedModel || "").trim();
+            const prompt = String(document.getElementById("ai-chat-input")?.value || state.aiAssistantPrompt || "");
+            const trimmedPrompt = prompt.trim();
+
+            if (!selectedModel) {
+                state.aiAssistantError = "Please select an AI model.";
+                render();
+                return;
+            }
+            if (!trimmedPrompt) {
+                state.aiAssistantError = "Question must not be empty.";
+                render();
+                return;
+            }
+            if (trimmedPrompt.length > 2000) {
+                state.aiAssistantError = "Question must not exceed 2000 characters.";
+                render();
+                return;
+            }
+
+            state.aiAssistantSelectedModel = selectedModel;
+            state.aiAssistantPrompt = prompt;
+            state.aiAssistantBusy = true;
+            state.aiAssistantError = "";
+            state.aiAssistantResponse = "";
+            render();
+
+            try {
+                const response = await apiRequest("/api/ai/chat", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        model: selectedModel,
+                        message: trimmedPrompt
+                    })
+                });
+                state.aiAssistantProvider = String(response?.provider || state.aiAssistantProvider || "").trim().toLowerCase();
+                state.aiAssistantSelectedModel = String(response?.model || selectedModel).trim();
+                state.aiAssistantResponse = String(response?.answer || "").trim();
+            } catch (error) {
+                state.aiAssistantError = error.message;
+            } finally {
+                state.aiAssistantBusy = false;
+                render();
+            }
+        });
+    }
+
     const portfolioSwitch = document.getElementById("portfolio-switch");
     if (portfolioSwitch) {
         portfolioSwitch.addEventListener("change", async (event) => {
@@ -1076,6 +1253,8 @@ function bindEvents() {
         if (!state.aiApiKeyStatusLoaded && !state.aiApiKeyBusy) {
             void loadAiApiKeyStatus();
         }
+    } else if (state.activeNav === "AI Assistant" && (!state.aiAssistantModelsLoaded || !state.aiApiKeyStatusLoaded) && !state.aiAssistantLoading) {
+        void loadAiAssistantData();
     }
 
     document.querySelectorAll("[data-nav]").forEach((button) => {
@@ -1090,6 +1269,9 @@ function bindEvents() {
             state.activeNav = target;
             state.sidebarOpen = false;
             render();
+            if (target === "AI Assistant") {
+                void loadAiAssistantData();
+            }
         });
     });
 
@@ -1122,7 +1304,7 @@ function bindEvents() {
                     type,
                     quantity: Number(formData.get("quantity")),
                     price: Number(formData.get("price")),
-                    tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
+                    tradeDate: toIsoDateTimeSeconds(formData.get("tradeDate"), "Trade Time")
                 };
                 const tradePath = payload.type === "SELL"
                     ? `/portfolios/${state.selectedPortfolioId}/trades/sell`
@@ -1155,7 +1337,7 @@ function bindEvents() {
 
                 const payload = {
                     amount,
-                    tradeDate: new Date(String(formData.get("tradeDate"))).toISOString().slice(0, 19)
+                    tradeDate: toIsoDateTimeSeconds(formData.get("tradeDate"), "Deposit Time")
                 };
 
                 await apiRequest(`/portfolios/${state.selectedPortfolioId}/cash/deposit`, {
@@ -1305,14 +1487,6 @@ function bindEvents() {
         });
     }
 
-    document.querySelectorAll("[data-edit-id]").forEach((button) => {
-        button.addEventListener("click", () => {
-            lastFocusedElement = document.activeElement;
-            state.editingAssetId = Number(button.dataset.editId);
-            state.addModalOpen = true;
-            render();
-        });
-    });
 
     document.querySelectorAll("[data-buy-id]").forEach((button) => {
         button.addEventListener("click", () => {
