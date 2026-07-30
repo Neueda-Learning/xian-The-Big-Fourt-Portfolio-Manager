@@ -44,14 +44,6 @@ const state = {
     tradeDraft: null,
     priceMessage: "",
     transactionMessage: "",
-    aiApiKeyStatus: {
-        userKeyConfigured: false,
-        systemKeyConfigured: false,
-        activeKeySource: "none"
-    },
-    aiApiKeyStatusLoaded: false,
-    aiApiKeyBusy: false,
-    aiApiKeyFeedback: "",
     aiAssistantLoading: false,
     aiAssistantBusy: false,
     aiAssistantModelsLoaded: false,
@@ -95,71 +87,6 @@ async function apiRequest(path, options = {}) {
     return payload;
 }
 
-function getAiApiKeyStatusMessage() {
-    const source = String(state.aiApiKeyStatus?.activeKeySource || "none").toLowerCase();
-    if (source === "user") {
-        return "Using personal API key";
-    }
-    if (source === "system") {
-        return "Using system default API key";
-    }
-    return "No API key configured";
-}
-
-function syncAiApiSettingsUi() {
-    const statusEl = document.getElementById("ai-api-key-status-text");
-    const feedbackEl = document.getElementById("ai-api-key-feedback");
-    const saveBtn = document.getElementById("save-ai-api-key-btn");
-    const clearBtn = document.getElementById("clear-ai-api-key-btn");
-
-    if (statusEl) {
-        // 中文注释：状态文案统一通过 textContent 写入，避免拼接 HTML。
-        statusEl.textContent = getAiApiKeyStatusMessage();
-    }
-    if (feedbackEl) {
-        feedbackEl.textContent = state.aiApiKeyFeedback || "";
-    }
-    if (saveBtn) {
-        saveBtn.disabled = state.aiApiKeyBusy;
-    }
-    if (clearBtn) {
-        clearBtn.disabled = state.aiApiKeyBusy;
-    }
-}
-
-function normalizeAiApiKeyStatus(payload) {
-    const source = String(payload?.activeKeySource || "none").toLowerCase();
-    const activeKeySource = source === "user" || source === "system" ? source : "none";
-    return {
-        userKeyConfigured: Boolean(payload?.userKeyConfigured),
-        systemKeyConfigured: Boolean(payload?.systemKeyConfigured),
-        activeKeySource
-    };
-}
-
-async function fetchAiApiKeyStatus() {
-    const response = await apiRequest("/api/ai/settings/api-key");
-    state.aiApiKeyStatus = normalizeAiApiKeyStatus(response);
-    state.aiApiKeyStatusLoaded = true;
-}
-
-async function loadAiApiKeyStatus() {
-    if (state.aiApiKeyBusy) {
-        return;
-    }
-    state.aiApiKeyBusy = true;
-    state.aiApiKeyFeedback = "";
-    syncAiApiSettingsUi();
-    try {
-        await fetchAiApiKeyStatus();
-    } catch (error) {
-        state.aiApiKeyFeedback = error.message;
-    } finally {
-        state.aiApiKeyBusy = false;
-        syncAiApiSettingsUi();
-    }
-}
-
 function normalizeAiModelOptions(payload) {
     const models = Array.isArray(payload?.models)
         ? payload.models
@@ -187,10 +114,7 @@ async function fetchAiModelOptions() {
 }
 
 function getAiAssistantStatusMessage() {
-    if (state.aiApiKeyStatusLoaded) {
-        return `${getAiApiKeyStatusMessage()}. Manage API keys in Settings.`;
-    }
-    return "Manage API keys in Settings if the assistant cannot answer.";
+    return "Using project-level default API key.";
 }
 
 async function loadAiAssistantData() {
@@ -204,13 +128,6 @@ async function loadAiAssistantData() {
             state.aiAssistantLoading = true;
             render();
             await fetchAiModelOptions();
-        }
-        if (!state.aiApiKeyStatusLoaded) {
-            try {
-                await fetchAiApiKeyStatus();
-            } catch (error) {
-                // Keep the chat available even if the status hint cannot be loaded.
-            }
         }
     } catch (error) {
         state.aiAssistantError = error.message;
@@ -613,21 +530,6 @@ function renderSettingsPanel() {
             <div class="settings-row">
                 <span>Theme Mode</span>
                 <button class="secondary-btn" id="settings-theme-toggle" type="button">${state.darkMode ? "Switch to Light" : "Switch to Dark"}</button>
-            </div>
-        </article>
-        <article class="card info-panel">
-            <h2>AI API Settings</h2>
-            <p>Manage your personal AI API key for the current session.</p>
-            <div class="settings-stack">
-                <label for="ai-api-key-input">API Key</label>
-                <input type="password" id="ai-api-key-input" maxlength="500" autocomplete="off">
-                <div class="settings-actions">
-                    <button class="primary-btn" id="save-ai-api-key-btn" type="button">Save API Key</button>
-                    <button class="secondary-btn" id="clear-ai-api-key-btn" type="button">Clear API Key</button>
-                </div>
-                <p class="settings-status" id="ai-api-key-status-text"></p>
-                <p class="settings-note">Your API key is stored only for the current session and will not be displayed after saving.</p>
-                <p class="form-error" id="ai-api-key-feedback"></p>
             </div>
         </article>
     `;
@@ -1155,80 +1057,7 @@ function bindEvents() {
         });
     }
 
-    const saveAiApiKeyBtn = document.getElementById("save-ai-api-key-btn");
-    const clearAiApiKeyBtn = document.getElementById("clear-ai-api-key-btn");
-    const aiApiKeyInput = document.getElementById("ai-api-key-input");
-
-    if (saveAiApiKeyBtn) {
-        saveAiApiKeyBtn.addEventListener("click", async () => {
-            if (state.aiApiKeyBusy) {
-                return;
-            }
-            const raw = String(aiApiKeyInput?.value || "").trim();
-            if (!raw) {
-                state.aiApiKeyFeedback = "API key must not be empty.";
-                syncAiApiSettingsUi();
-                return;
-            }
-            if (raw.length > 500) {
-                state.aiApiKeyFeedback = "API key must be at most 500 characters.";
-                syncAiApiSettingsUi();
-                return;
-            }
-
-            state.aiApiKeyBusy = true;
-            state.aiApiKeyFeedback = "";
-            syncAiApiSettingsUi();
-            try {
-                // 中文注释：前端只提交一次明文，保存后立即清空输入框，避免界面残留。
-                const response = await apiRequest("/api/ai/settings/api-key", {
-                    method: "POST",
-                    body: JSON.stringify({ apiKey: raw })
-                });
-                if (aiApiKeyInput) {
-                    aiApiKeyInput.value = "";
-                }
-                await fetchAiApiKeyStatus();
-                state.aiApiKeyFeedback = response?.message || "API key saved.";
-            } catch (error) {
-                state.aiApiKeyFeedback = error.message;
-            } finally {
-                state.aiApiKeyBusy = false;
-                syncAiApiSettingsUi();
-            }
-        });
-    }
-
-    if (clearAiApiKeyBtn) {
-        clearAiApiKeyBtn.addEventListener("click", async () => {
-            if (state.aiApiKeyBusy) {
-                return;
-            }
-            state.aiApiKeyBusy = true;
-            state.aiApiKeyFeedback = "";
-            syncAiApiSettingsUi();
-            try {
-                const response = await apiRequest("/api/ai/settings/api-key", { method: "DELETE" });
-                if (aiApiKeyInput) {
-                    aiApiKeyInput.value = "";
-                }
-                await fetchAiApiKeyStatus();
-                state.aiApiKeyFeedback = response?.message || "API key cleared.";
-            } catch (error) {
-                state.aiApiKeyFeedback = error.message;
-            } finally {
-                state.aiApiKeyBusy = false;
-                syncAiApiSettingsUi();
-            }
-        });
-    }
-
-    if (state.activeNav === "Settings") {
-        syncAiApiSettingsUi();
-        if (!state.aiApiKeyStatusLoaded && !state.aiApiKeyBusy) {
-            void loadAiApiKeyStatus();
-        }
-    } else if (state.activeNav === "AI Assistant" && (!state.aiAssistantModelsLoaded || !state.aiApiKeyStatusLoaded) && !state.aiAssistantLoading) {
+    if (state.activeNav === "AI Assistant" && !state.aiAssistantModelsLoaded && !state.aiAssistantLoading) {
         void loadAiAssistantData();
     }
 
@@ -1237,9 +1066,6 @@ function bindEvents() {
             const target = button.dataset.nav;
             if (!target || target === state.activeNav) {
                 return;
-            }
-            if (target === "Settings") {
-                state.aiApiKeyStatusLoaded = false;
             }
             state.activeNav = target;
             state.sidebarOpen = false;
