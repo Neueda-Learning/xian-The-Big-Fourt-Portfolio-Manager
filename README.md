@@ -70,9 +70,7 @@
 
 - 集成智谱 AI（Zhipu / GLM）大模型，提供金融知识教育性问答。
 - 支持前端模型选择（`glm-4.7-flash`、`glm-4.7`、`glm-5.2`），可用模型列表由后端配置管控。
-- 支持用户在当前会话中保存个人 API Key，优先级高于系统默认 Key。
 - **AI 仅用于知识问答，不执行任何交易、持仓或数据库变更操作**，内置系统提示词强制约束。
-- API Key 仅存储于服务端 `HttpSession`，不落库、不写入配置文件、不回传明文至前端。
 
 ---
 
@@ -181,11 +179,11 @@
 **前提**：本机已安装并启动 MySQL，数据库 `portfolio_db` 可自动创建（连接 URL 含 `createDatabaseIfNotExist=true`）。
 
 ```powershell
-# 构建并启动（默认端口 9009）
+# 构建并启动（默认端口 9005）
 .\mvnw.cmd spring-boot:run
 ```
 
-浏览器访问：[http://localhost:9009](http://localhost:9009)
+浏览器访问：[http://localhost:9005](http://localhost:9009)
 
 **配置 AI 功能**（可选）：在 IntelliJ IDEA Run Configuration 的 Environment Variables 中添加：
 
