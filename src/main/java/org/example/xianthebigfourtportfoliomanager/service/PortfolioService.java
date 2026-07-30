@@ -51,11 +51,12 @@ public class PortfolioService {
 
         String name = normalizeName(portf.getName());
         BigDecimal initialCash = BigDecimal.ZERO;
+        BigDecimal sharedBalance = resolveSharedCashBalance();
 
         portf.setName(name);
         portf.setDescription(normalizeDescription(portf.getDescription()));
         portf.setInitialCash(initialCash);
-        portf.setCashBalance(initialCash);
+        portf.setCashBalance(sharedBalance);
 
         return portfolioRepository.save(portf);
     }
@@ -99,5 +100,13 @@ public class PortfolioService {
             throw new IllegalArgumentException("initialCash cannot be negative.");
         }
         return normalized;
+    }
+
+    private BigDecimal resolveSharedCashBalance() {
+        List<portfolio> portfolios = portfolioRepository.getAllPortfolios();
+        if (portfolios.isEmpty() || portfolios.get(0).getCashBalance() == null) {
+            return BigDecimal.ZERO;
+        }
+        return portfolios.get(0).getCashBalance();
     }
 }

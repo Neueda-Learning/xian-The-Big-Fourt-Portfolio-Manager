@@ -81,10 +81,7 @@ public class PerformanceService {
             ));
         }
 
-        portfolio firstPortfolio = portfolioRepository.getPortfolioById(1);
-        BigDecimal cashBalance = (firstPortfolio != null && firstPortfolio.getCashBalance() != null) 
-            ? firstPortfolio.getCashBalance() 
-            : (portf.getCashBalance() == null ? BigDecimal.ZERO : portf.getCashBalance());
+        BigDecimal cashBalance = resolveSharedCashBalance();
 
         if (holdingsMarketValue.compareTo(BigDecimal.ZERO) <= 0) {
             return new PerformanceResult(portfolioId, portf.getName(),
@@ -122,6 +119,14 @@ public class PerformanceService {
         }
 
         return null;
+    }
+
+    private BigDecimal resolveSharedCashBalance() {
+        List<portfolio> portfolios = portfolioRepository.getAllPortfolios();
+        if (portfolios.isEmpty() || portfolios.get(0).getCashBalance() == null) {
+            return BigDecimal.ZERO;
+        }
+        return portfolios.get(0).getCashBalance();
     }
 
     private Map<Integer, List<Transaction>> buildTransactionsByHolding(int portfolioId) {
