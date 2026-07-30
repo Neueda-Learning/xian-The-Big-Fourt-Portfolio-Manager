@@ -54,7 +54,7 @@ public class PortfolioRepository {
 
     public portfolio save(portfolio portf) {
         BigDecimal initialCash = portf.getInitialCash() == null ? BigDecimal.ZERO : portf.getInitialCash();
-        BigDecimal cashBalance = initialCash;
+        BigDecimal cashBalance = portf.getCashBalance() == null ? initialCash : portf.getCashBalance();
         String sql = "insert into portfolio (pro_name, pro_description, initial_cash, cash_balance) values (?, ?, ?, ?)";
         int rows = jdbcTemplate.update(sql, portf.getName(), portf.getDescription(), initialCash, cashBalance);
         if (rows == 0) {
@@ -75,14 +75,16 @@ public class PortfolioRepository {
     }
 
     public portfolio updateCashBalance(int id, BigDecimal cashBalance) {
-        String sql = "update portfolio set cash_balance = ?, update_at = CURRENT_TIMESTAMP where id = ?";
-        jdbcTemplate.update(sql, cashBalance, id);
+        String sql = "update portfolio set cash_balance = ?, update_at = CURRENT_TIMESTAMP";
+        jdbcTemplate.update(sql, cashBalance);
         return getPortfolioById(id);
     }
 
     public portfolio updateInitialCashAndBalance(int id, BigDecimal initialCash, BigDecimal cashBalance) {
         String sql = "update portfolio set initial_cash = ?, cash_balance = ?, update_at = CURRENT_TIMESTAMP where id = ?";
         jdbcTemplate.update(sql, initialCash, cashBalance, id);
+        String syncSql = "update portfolio set cash_balance = ?, update_at = CURRENT_TIMESTAMP where id <> ?";
+        jdbcTemplate.update(syncSql, cashBalance, id);
         return getPortfolioById(id);
     }
 
@@ -97,4 +99,3 @@ public class PortfolioRepository {
         return count != null && count.intValue() > 0;
     }
 }
-
