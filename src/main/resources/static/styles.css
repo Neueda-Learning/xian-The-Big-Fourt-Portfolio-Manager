@@ -124,6 +124,7 @@ select:focus-visible {
 }
 
 .icon-btn svg,
+.summary-icon svg,
 .nav-icon svg,
 .btn-icon svg,
 .info-icon svg,
@@ -133,6 +134,11 @@ select:focus-visible {
     width: 18px;
     height: 18px;
     fill: currentColor;
+}
+
+.summary-icon svg {
+    width: 28px;
+    height: 28px;
 }
 
 .profile-btn {
@@ -347,8 +353,8 @@ select:focus-visible {
 
 .summary-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
     margin-bottom: 14px;
 }
 
@@ -361,13 +367,18 @@ select:focus-visible {
 }
 
 .summary-card {
-    padding: 14px 16px;
+    padding: 24px;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
 
 .summary-top-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
+    gap: 12px;
 }
 
 .summary-card-label {
@@ -378,8 +389,8 @@ select:focus-visible {
 }
 
 .summary-card-value {
-    margin: 8px 0 5px;
-    font-size: 34px;
+    margin: 12px 0 8px;
+    font-size: 40px;
     line-height: 1;
     font-weight: 800;
     letter-spacing: -0.03em;
@@ -393,26 +404,32 @@ select:focus-visible {
 }
 
 .summary-icon {
-    width: 34px;
-    height: 34px;
-    border-radius: 999px;
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
     display: grid;
     place-items: center;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.08);
+    transition: transform 0.2s ease;
 }
 
 .summary-icon.positive {
     color: var(--green);
-    background: var(--green-soft);
+    background: linear-gradient(135deg, var(--green-soft) 0%, rgba(22, 163, 74, 0.08) 100%);
 }
 
 .summary-icon.negative {
     color: var(--red);
-    background: var(--red-soft);
+    background: linear-gradient(135deg, var(--red-soft) 0%, rgba(220, 38, 38, 0.08) 100%);
 }
 
 .summary-icon.neutral {
     color: var(--purple);
-    background: #f3e8ff;
+    background: linear-gradient(135deg, #f3e8ff 0%, rgba(139, 92, 246, 0.08) 100%);
+}
+
+.summary-card:hover .summary-icon {
+    transform: scale(1.08);
 }
 
 .sparkline-wrap {
@@ -992,10 +1009,6 @@ th {
 }
 
 @media (max-width: 1200px) {
-    .summary-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
     .charts-grid {
         grid-template-columns: 1fr;
     }
