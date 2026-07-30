@@ -220,28 +220,28 @@ function buildPerformanceSeries() {
     if (orderedSnapshots.length > 0) {
         state.performanceData = orderedSnapshots.map((item) => ({
             date: new Date(`${item.snapshotDate}T16:00:00`),
-            value: Number(item.totalValue || 0)
+            value: Number(item.holdingsValue || 0)
         }));
 
-        const totalValue = Number(state.performance?.totalMarketValue || 0);
+        const totalGain = Number(state.summary?.totalGain ?? state.performance?.totalReturn ?? 0);
         const lastPoint = state.performanceData[state.performanceData.length - 1];
         const today = new Date().toDateString();
         if (!lastPoint || new Date(lastPoint.date).toDateString() !== today) {
             state.performanceData.push({
                 date: new Date(),
-                value: Number(totalValue.toFixed(2))
+                value: Number(totalGain.toFixed(2))
             });
         } else {
-            lastPoint.value = Number(totalValue.toFixed(2));
+            lastPoint.value = Number(totalGain.toFixed(2));
         }
         return;
     }
 
-    const totalValue = Number(state.performance?.totalMarketValue || state.holdings.reduce((sum, item) => sum + item.quantity * item.currentPrice, 0));
+    const totalGain = Number(state.summary?.totalGain ?? state.performance?.totalReturn ?? 0);
     state.performanceData = [
         {
             date: new Date(),
-            value: Number(totalValue.toFixed(2))
+            value: Number(totalGain.toFixed(2))
         }
     ];
 }
